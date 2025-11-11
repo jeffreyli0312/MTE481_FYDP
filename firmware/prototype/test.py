@@ -5,12 +5,17 @@ import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtCore, QtWidgets
 import sys
 
+# ---------------- Config: lock rotation axis ----------------
+# Choose one: 'roll', 'pitch', 'yaw'
+LOCK_AXIS = 'roll'
+
 # ---------------- Serial Setup ----------------
 # windows 
 # ser = serial.Serial('COM3', 9600, timeout=1)  # <-- change COM port
 
 # macbook
 ser = serial.Serial('/dev/tty.usbmodem101', 9600, timeout=1)  # <-- change COM port
+
 # ---------------- PyQtGraph 3D Setup ----------------
 app = QtWidgets.QApplication([])
 
@@ -22,7 +27,6 @@ w.opts['backgroundColor'] = (1, 1, 1, 1)  # White background (0–1 floats)
 w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
 # ---------------- Cube Mesh ----------------
-# Vertices and faces manually defined
 verts = np.array([
     [-0.5, -0.5, -0.5],
     [-0.5, -0.5,  0.5],
@@ -50,18 +54,15 @@ w.addItem(cube)
 
 # ---------------- Coordinate Arrows ----------------
 def add_arrow(origin, direction, color=(0,0,0,1), length=100):
-    """Draw an arrow as a line + small cone at the tip"""
-    direction = np.array(direction)
+    direction = np.array(direction, dtype=float)
     direction = direction / np.linalg.norm(direction) * length
     line = gl.GLLinePlotItem(pos=np.array([origin, origin+direction]), color=color, width=2, antialias=True)
     w.addItem(line)
-    # cone tip
     cone_mesh = gl.MeshData.cylinder(rows=10, cols=20, radius=[0.0, 5], length=15)
     cone = gl.GLMeshItem(meshdata=cone_mesh, color=color, smooth=True, drawEdges=False)
     cone.translate(*(origin+direction))
     w.addItem(cone)
 
-# X, Y, Z arrows
 add_arrow([0,0,0],[1,0,0], color=(1,0,0,1))
 add_arrow([0,0,0],[0,1,0], color=(0,1,0,1))
 add_arrow([0,0,0],[0,0,1], color=(0,0,1,1))
@@ -73,26 +74,38 @@ def update():
         line = ser.readline().decode('ascii').strip()
         if not line:
             return
-        roll, pitch, yaw = [float(x) for x in line.split(',')]
 
-        # Convert to radians
-        roll = np.radians(roll)
-        pitch = np.radians(pitch)
-        yaw = np.radians(yaw)
+        parts = line.split(',')
+        if len(parts) != 3:
+            return
 
-        # Reset and rotate cube
+        roll_deg, pitch_deg, yaw_deg = [float(x) for x in parts]
+
+        # Lock to a single axis
+        if LOCK_AXIS == 'roll':
+            pitch_deg = 0.0
+            yaw_deg = 0.0
+        elif LOCK_AXIS == 'pitch':
+            roll_deg = 0.0
+            yaw_deg = 0.0
+        elif LOCK_AXIS == 'yaw':
+            roll_deg = 0.0
+            pitch_deg = 0.0
+
+        # Reset and rotate cube with (possibly zeroed) angles
         cube.resetTransform()
         cube.scale(50,50,50)
-        cube.rotate(np.degrees(roll), 1,0,0)
-        cube.rotate(np.degrees(pitch), 0,1,0)
-        cube.rotate(np.degrees(yaw), 0,0,1)
-    except:
+        cube.rotate(roll_deg, 1,0,0)
+        cube.rotate(pitch_deg, 0,1,0)
+        cube.rotate(yaw_deg, 0,0,1)
+
+    except Exception:
         pass
 
 # ---------------- Timer ----------------
 timer = QtCore.QTimer()
 timer.timeout.connect(update)
-timer.start(30)  # update ~33 Hz
+timer.start(30)
 
 # ---------------- Run ----------------
 if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
