@@ -98,12 +98,10 @@ def update():
 
         # Lock / process axes
         if LOCK_AXIS == 'roll':
-            # Only roll is used; zero others
             pitch_deg = 0.0
             yaw_deg = 0.0
 
         elif LOCK_AXIS == 'pitch':
-            # Only pitch is used; zero others
             roll_deg = 0.0
             yaw_deg = 0.0
 
@@ -113,9 +111,24 @@ def update():
             pitch_deg = 0.0
             if ref_yaw is None:
                 ref_yaw = yaw_deg
-                # Don't move on the first frame; establishes reference heading
+                # Establish reference heading; do not move cube on this frame
+                print(f"Yaw reference set to {ref_yaw:.2f} deg")
                 return
-            yaw_deg = yaw_deg - ref_yaw  # visualize change in yaw from start
+
+            # Yaw relative to reference (0 at start)
+            yaw_rel = yaw_deg - ref_yaw
+
+            # Optional: wrap to [-180, 180] for nicer display
+            if yaw_rel > 180:
+                yaw_rel -= 360
+            elif yaw_rel < -180:
+                yaw_rel += 360
+
+            # Print current yaw relative to 0-position
+            print(f"Yaw (relative): {yaw_rel:.2f} deg")
+
+            # Use relative yaw for visualization
+            yaw_deg = yaw_rel
 
         # Reset and rotate cube with processed angles
         cube.resetTransform()
