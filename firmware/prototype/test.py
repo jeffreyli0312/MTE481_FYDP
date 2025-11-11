@@ -19,6 +19,9 @@ except serial.SerialException as e:
     print(f"Error details: {e}")
     sys.exit(1)
 
+# ---------------- Reference Orientation ----------------
+ref_angles = None  # (roll0, pitch0, yaw0) in degrees
+
 # ---------------- PyQtGraph 3D Setup ----------------
 app = QtWidgets.QApplication([])
 
@@ -30,7 +33,6 @@ w.opts['backgroundColor'] = (1, 1, 1, 1)  # White background (0–1 floats)
 w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
 # ---------------- Cube Mesh ----------------
-# Vertices and faces manually defined
 verts = np.array([
     [-0.5, -0.5, -0.5],
     [-0.5, -0.5,  0.5],
@@ -59,11 +61,10 @@ w.addItem(cube)
 # ---------------- Coordinate Arrows ----------------
 def add_arrow(origin, direction, color=(0,0,0,1), length=100):
     """Draw an arrow as a line + small cone at the tip"""
-    direction = np.array(direction)
+    direction = np.array(direction, dtype=float)
     direction = direction / np.linalg.norm(direction) * length
     line = gl.GLLinePlotItem(pos=np.array([origin, origin+direction]), color=color, width=2, antialias=True)
     w.addItem(line)
-    # cone tip
     cone_mesh = gl.MeshData.cylinder(rows=10, cols=20, radius=[0.0, 5], length=15)
     cone = gl.GLMeshItem(meshdata=cone_mesh, color=color, smooth=True, drawEdges=False)
     cone.translate(*(origin+direction))
@@ -76,25 +77,41 @@ add_arrow([0,0,0],[0,0,1], color=(0,0,1,1))
 
 # ---------------- Update Function ----------------
 def update():
-    global cube
+    global cube, ref_angles
     try:
-        line = ser.readline().decode('ascii').strip()
+        line = ser.readline().decode('ascii', errors='ignore').strip()
         if not line:
             return
-        roll, pitch, yaw = [float(x) for x in line.split(',')]
 
-        # Convert to radians
-        roll = np.radians(roll)
-        pitch = np.radians(pitch)
-        yaw = np.radians(yaw)
+        parts = line.split(',')
+        if len(parts) != 3:
+            return
 
-        # Reset and rotate cube
+        roll_deg, pitch_deg, yaw_deg = [float(x) for x in parts]
+
+        # Set initial reference on first valid read
+        if ref_angles is None:
+            ref_angles = (roll_deg, pitch_deg, yaw_deg)
+            print(f"Reference set to [roll, pitch, yaw]: ({roll_deg:.2f}, {pitch_deg:.2f}, {yaw_deg:.2f})")
+            return  # start using relative motion from next frame
+
+        # Relative vector from reference [Δroll, Δpitch, Δyaw] in degrees
+        d_roll = roll_deg - ref_angles[0]
+        d_pitch = pitch_deg - ref_angles[1]
+        d_yaw = yaw_deg - ref_angles[2]
+
+        # Output the current relative vector
+        print(f"Relative vector [roll, pitch, yaw]: ({d_roll:.2f}, {d_pitch:.2f}, {d_yaw:.2f})")
+
+        # Reset and rotate cube using relative orientation
         cube.resetTransform()
         cube.scale(50,50,50)
-        cube.rotate(np.degrees(roll), 1,0,0)
-        cube.rotate(np.degrees(pitch), 0,1,0)
-        cube.rotate(np.degrees(yaw), 0,0,1)
-    except:
+        cube.rotate(d_roll, 1,0,0)
+        cube.rotate(d_pitch, 0,1,0)
+        cube.rotate(d_yaw, 0,0,1)
+
+    except Exception:
+        # Ignore malformed lines / conversion issues
         pass
 
 # ---------------- Timer ----------------
