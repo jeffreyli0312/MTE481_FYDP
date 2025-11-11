@@ -111,23 +111,25 @@ def update():
             pitch_deg = 0.0
             if ref_yaw is None:
                 ref_yaw = yaw_deg
-                # Establish reference heading; do not move cube on this frame
                 print(f"Yaw reference set to {ref_yaw:.2f} deg")
                 return
 
-            # Yaw relative to reference (0 at start)
+            # Yaw relative to reference
             yaw_rel = yaw_deg - ref_yaw
 
-            # Optional: wrap to [-180, 180] for nicer display
+            # Wrap to [-180, 180] for nicer display
             if yaw_rel > 180:
                 yaw_rel -= 360
             elif yaw_rel < -180:
                 yaw_rel += 360
 
+            # Flip sign so visual & printed direction match your physical rotation
+            yaw_rel = -yaw_rel
+
             # Print current yaw relative to 0-position
             print(f"Yaw (relative): {yaw_rel:.2f} deg")
 
-            # Use relative yaw for visualization
+            # Use relative yaw (with flipped sign) for visualization
             yaw_deg = yaw_rel
 
         # Reset and rotate cube with processed angles
