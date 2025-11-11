@@ -7,7 +7,7 @@ import sys
 
 # ---------------- Config: lock rotation axis ----------------
 # Choose one: 'roll', 'pitch', 'yaw'
-LOCK_AXIS = 'roll'
+LOCK_AXIS = 'yaw'
 
 # ---------------- Serial Setup ----------------
 # windows 
@@ -48,7 +48,13 @@ faces = np.array([
 ], dtype=int)
 
 cube_mesh = gl.MeshData(vertexes=verts, faces=faces)
-cube = gl.GLMeshItem(meshdata=cube_mesh, color=(1,0,0,0.5), smooth=False, drawEdges=True, edgeColor=(0,0,0,1))
+cube = gl.GLMeshItem(
+    meshdata=cube_mesh,
+    color=(1,0,0,0.5),
+    smooth=False,
+    drawEdges=True,
+    edgeColor=(0,0,0,1)
+)
 cube.scale(50,50,50)
 w.addItem(cube)
 
@@ -56,7 +62,12 @@ w.addItem(cube)
 def add_arrow(origin, direction, color=(0,0,0,1), length=100):
     direction = np.array(direction, dtype=float)
     direction = direction / np.linalg.norm(direction) * length
-    line = gl.GLLinePlotItem(pos=np.array([origin, origin+direction]), color=color, width=2, antialias=True)
+    line = gl.GLLinePlotItem(
+        pos=np.array([origin, origin+direction]),
+        color=color,
+        width=2,
+        antialias=True
+    )
     w.addItem(line)
     cone_mesh = gl.MeshData.cylinder(rows=10, cols=20, radius=[0.0, 5], length=15)
     cone = gl.GLMeshItem(meshdata=cone_mesh, color=color, smooth=True, drawEdges=False)
@@ -67,11 +78,15 @@ add_arrow([0,0,0],[1,0,0], color=(1,0,0,1))
 add_arrow([0,0,0],[0,1,0], color=(0,1,0,1))
 add_arrow([0,0,0],[0,0,1], color=(0,0,1,1))
 
+# ---------------- Yaw Reference ----------------
+ref_yaw = None  # used when LOCK_AXIS == 'yaw' to show yaw relative to startup
+
 # ---------------- Update Function ----------------
 def update():
-    global cube
+    global cube, ref_yaw
+
     try:
-        line = ser.readline().decode('ascii').strip()
+        line = ser.readline().decode('ascii', errors='ignore').strip()
         if not line:
             return
 
@@ -81,18 +96,28 @@ def update():
 
         roll_deg, pitch_deg, yaw_deg = [float(x) for x in parts]
 
-        # Lock to a single axis
+        # Lock / process axes
         if LOCK_AXIS == 'roll':
+            # Only roll is used; zero others
             pitch_deg = 0.0
             yaw_deg = 0.0
-        elif LOCK_AXIS == 'pitch':
-            roll_deg = 0.0
-            yaw_deg = 0.0
-        elif LOCK_AXIS == 'yaw':
-            roll_deg = 0.0
-            pitch_deg = 0.0
 
-        # Reset and rotate cube with (possibly zeroed) angles
+        elif LOCK_AXIS == 'pitch':
+            # Only pitch is used; zero others
+            roll_deg = 0.0
+            yaw_deg = 0.0
+
+        elif LOCK_AXIS == 'yaw':
+            # Only yaw is used; show yaw relative to initial yaw
+            roll_deg = 0.0
+            pitch_deg = 0.0
+            if ref_yaw is None:
+                ref_yaw = yaw_deg
+                # Don't move on the first frame; establishes reference heading
+                return
+            yaw_deg = yaw_deg - ref_yaw  # visualize change in yaw from start
+
+        # Reset and rotate cube with processed angles
         cube.resetTransform()
         cube.scale(50,50,50)
         cube.rotate(roll_deg, 1,0,0)
@@ -100,6 +125,7 @@ def update():
         cube.rotate(yaw_deg, 0,0,1)
 
     except Exception:
+        # Ignore malformed lines / parse errors
         pass
 
 # ---------------- Timer ----------------
