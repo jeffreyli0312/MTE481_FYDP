@@ -9,7 +9,10 @@ import sys
 # NOTE: This requires the Arduino to be connected and have the IMU code (imu.cpp) flashed onto it.
 # The Arduino should be outputting roll,pitch,yaw data in the format: "roll,pitch,yaw\n"
 try:
-    ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port (baud rate matches imu.cpp)
+    # for windows
+    # ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port (baud rate matches imu.cpp)
+    # for mac (nathan)
+    ser = serial.Serial('/dev/tty.usbmodem101', 115200, timeout=1)  # <-- change COM port (baud rate matches imu.cpp)
     print("Serial connection established on COM3")
 except serial.SerialException as e:
     print(f"Error: Could not open serial port COM3. Make sure:")
