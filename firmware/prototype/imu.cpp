@@ -163,21 +163,40 @@ void printRawAGMT(ICM_20948_AGMT_t agmt)
 
 
 void printOrientation(ICM_20948_I2C *sensor) {
-  // For simplicity, just use accelerometer to estimate pitch/roll
+  // Read accel (g) and mag (uT)
   float ax = sensor->accX();
   float ay = sensor->accY();
   float az = sensor->accZ();
 
+  float mx = sensor->magX();
+  float my = sensor->magY();
+  float mz = sensor->magZ();
+
+  // Roll & pitch from accelerometer
   float roll  = atan2(ay, az) * 180.0 / PI;
-  float pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0 / PI;
+  float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
 
-  // (Yaw needs magnetometer + fusion; leaving 0 for now)
-  float yaw = 0;
+  // Convert to radians for tilt compensation
+  float rollRad  = roll * PI / 180.0;
+  float pitchRad = pitch * PI / 180.0;
 
-  SERIAL_PORT.print(roll); SERIAL_PORT.print(",");
+  // Tilt-compensated magnetometer
+  float mx_comp = mx * cos(pitchRad) + mz * sin(pitchRad);
+  float my_comp = mx * sin(rollRad) * sin(pitchRad)
+                + my * cos(rollRad)
+                - mz * sin(rollRad) * cos(pitchRad);
+
+  // Yaw (heading) in degrees
+  float yaw = atan2(-my_comp, mx_comp) * 180.0 / PI; // sign convention; adjust if flipped
+
+  // Normalize yaw to [0, 360)
+  if (yaw < 0) yaw += 360.0;
+
+  SERIAL_PORT.print(roll);  SERIAL_PORT.print(",");
   SERIAL_PORT.print(pitch); SERIAL_PORT.print(",");
   SERIAL_PORT.println(yaw);
 }
+
 
 
 void printFormattedFloat(float val, uint8_t leading, uint8_t decimals)
