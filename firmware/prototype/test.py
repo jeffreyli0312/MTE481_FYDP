@@ -94,26 +94,50 @@ def update():
         if len(parts) != 3:
             return
 
-        # Only yaw matters
-        _, _, yaw_deg = [float(x) for x in parts]
+        roll_deg, pitch_deg, yaw_deg = [float(x) for x in parts]
 
-        if ref_yaw is None:
-            ref_yaw = yaw_deg
-            return
+        # Lock / process axes
+        if LOCK_AXIS == 'roll':
+            pitch_deg = 0.0
+            yaw_deg = 0.0
 
-        # Compute relative yaw only
-        yaw_rel = yaw_deg - ref_yaw
-        yaw_rel = (yaw_rel + 180) % 360 - 180
-        yaw_deg = -yaw_rel  # your convention
+        elif LOCK_AXIS == 'pitch':
+            roll_deg = 0.0
+            yaw_deg = 0.0
 
-        # LIGHTWEIGHT TRANSFORM: ONLY YAW
+        elif LOCK_AXIS == 'yaw':
+            # Ignore roll and pitch completely
+            roll_deg = 0.0
+            pitch_deg = 0.0
+
+            # Set reference first time
+            if ref_yaw is None:
+                ref_yaw = yaw_deg
+                print(f"Yaw reference set to {ref_yaw:.2f} deg")
+                return
+
+            # Pure horizontal rotation only
+            yaw_rel = yaw_deg - ref_yaw
+
+            # Wrap to [-180, 180]
+            yaw_rel = (yaw_rel + 180) % 360 - 180
+
+            # Flip sign (your visual convention)
+            yaw_deg = -yaw_rel
+
+            print(f"Yaw (relative): {yaw_deg:.2f} deg")
+
+
+        # Reset and rotate cube with processed angles
         cube.resetTransform()
-        cube.scale(50, 50, 50)
-        cube.rotate(yaw_deg, 0, 0, 1)
+        cube.scale(50,50,50)
+        cube.rotate(roll_deg, 1,0,0)
+        cube.rotate(pitch_deg, 0,1,0)
+        cube.rotate(yaw_deg, 0,0,1)
 
-    except:
+    except Exception:
+        # Ignore malformed lines / parse errors
         pass
-
 
 # ---------------- Timer ----------------
 timer = QtCore.QTimer()
