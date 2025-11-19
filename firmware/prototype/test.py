@@ -4,6 +4,9 @@ import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from pyqtgraph.Qt import QtCore, QtWidgets
 import sys
+import csv
+import time
+from datetime import datetime
 
 # ---------------- Config: lock rotation axis ----------------
 # Choose one: 'roll', 'pitch', 'yaw'
@@ -14,7 +17,15 @@ LOCK_AXIS = 'yaw'
 # ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port
 
 # macbook
-ser = serial.Serial('/dev/tty.usbmodem101', 9600, timeout=1)  # <-- change COM port
+ser = serial.Serial('/dev/tty.usbmodem101', 115200, timeout=1)  # <-- change COM port
+
+# ---------------- CSV Setup ----------------
+csv_filename = f"yaw_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+csv_file = open(csv_filename, 'w', newline='')
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow(['time', 'yaw_deg'])  # Header row
+start_time = time.time()  # Reference time for relative timestamps
+print(f"Saving data to {csv_filename}")
 
 # ---------------- PyQtGraph 3D Setup ----------------
 app = QtWidgets.QApplication([])
@@ -86,7 +97,11 @@ def update():
     global cube, ref_yaw
 
     try:
+        # Clear any old data in the buffer to get the latest reading
+        ser.reset_input_buffer()
+        
         line = ser.readline().decode('ascii', errors='ignore').strip()
+        print(line)
         if not line:
             return
 
@@ -100,16 +115,22 @@ def update():
         # Yaw-only mode
         if ref_yaw is None:
             ref_yaw = yaw_deg
-            return
+            # return
 
         yaw_rel = yaw_deg - ref_yaw
         yaw_rel = (yaw_rel + 180) % 360 - 180
         yaw_deg = -yaw_rel
 
+        # Log to CSV with timestamp
+        elapsed_time = time.time() - start_time
+        csv_writer.writerow([elapsed_time, yaw_deg])
+        csv_file.flush()  # Ensure data is written immediately
+
         # Apply ONLY yaw rotation
         cube.resetTransform()
         cube.scale(50,50,50)
         cube.rotate(yaw_deg, 0,0,1)
+        # print(yaw_deg)
 
     except:
         pass
@@ -118,8 +139,20 @@ def update():
 # ---------------- Timer ----------------
 timer = QtCore.QTimer()
 timer.timeout.connect(update)
-timer.start(30)
+timer.start(10)
+
+# ---------------- Cleanup Function ----------------
+def cleanup():
+    csv_file.close()
+    ser.close()
+    print(f"\nData saved to {csv_filename}")
+    print(f"Total duration: {time.time() - start_time:.2f} seconds")
+
+app.aboutToQuit.connect(cleanup)
 
 # ---------------- Run ----------------
-if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
-    QtWidgets.QApplication.instance().exec_()
+try:
+    if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
+        QtWidgets.QApplication.instance().exec_()
+finally:
+    cleanup()
