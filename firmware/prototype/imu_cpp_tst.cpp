@@ -6,17 +6,20 @@
 #define AD0_VAL 1
 
 ICM_20948_I2C myICM;
-Madgwick filter;  // Madgwick filter instance
+
+// Gyro-only yaw variables
+float yaw_gyro = 0;
+unsigned long last_t = 0;
 
 void setup() {
   SERIAL_PORT.begin(115200);
-  while(!SERIAL_PORT);
+  while (!SERIAL_PORT);
 
   WIRE_PORT.begin();
   WIRE_PORT.setClock(400000);
 
   bool ok = false;
-  while(!ok) {
+  while (!ok) {
     myICM.begin(WIRE_PORT, AD0_VAL);
     if (myICM.status == ICM_20948_Stat_Ok) ok = true;
     else {
@@ -25,42 +28,35 @@ void setup() {
     }
   }
 
-  filter.begin(100);  // filter update rate ≈ 100 Hz
+  // Initialize timestamp
+  last_t = micros();
 }
 
 void loop() {
 
   if (myICM.dataReady()) {
-    myICM.getAGMT();  
+    myICM.getAGMT();
 
-    // Read sensor values (convert to proper units)
-    float ax = myICM.accX() / 9.80665;           // m/s^2 → g
-    float ay = myICM.accY() / 9.80665;
-    float az = myICM.accZ() / 9.80665;
+    // Read gyro Z rate (deg/s)
+    float gz_deg = myICM.gyrZ();           // degrees/second
 
-    float gx = myICM.gyrX() * 0.0174533;         // deg/s → rad/s
-    float gy = myICM.gyrY() * 0.0174533;
-    float gz = myICM.gyrZ() * 0.0174533;
+    // Compute dt (seconds)
+    unsigned long now = micros();
+    float dt = (now - last_t) * 1e-6;      // convert µs → s
+    last_t = now;
 
-    float mx = myICM.magX();
-    float my = myICM.magY();
-    float mz = myICM.magZ();
+    // Integrate gyro to get yaw
+    yaw_gyro += gz_deg * dt;
 
-    // Update filter (with magnetometer)
-    filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+    // Wrap yaw within 0–360 degrees
+    if (yaw_gyro >= 360.0f) yaw_gyro -= 360.0f;
+    if (yaw_gyro <   0.0f) yaw_gyro += 360.0f;
 
-    // Extract roll, pitch, yaw from filter
-    float roll  = filter.getRoll();
-    float pitch = filter.getPitch();
-    float yaw   = filter.getYaw();
-
-    // Normalize yaw to [0,360)
-    if (yaw < 0) yaw += 360.0;
-
-    // Output to Python
-    SERIAL_PORT.print(roll); SERIAL_PORT.print(",");
-    SERIAL_PORT.print(pitch); SERIAL_PORT.print(",");
-    SERIAL_PORT.println(yaw);
+    // Output to Python as roll,pitch,yaw
+    // Roll = 0, Pitch = 0 (ignored)
+    SERIAL_PORT.print(0.0); SERIAL_PORT.print(",");
+    SERIAL_PORT.print(0.0); SERIAL_PORT.print(",");
+    SERIAL_PORT.println(yaw_gyro);
 
     delay(5);
   }
