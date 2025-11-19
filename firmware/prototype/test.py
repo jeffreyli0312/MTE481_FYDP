@@ -11,10 +11,10 @@ LOCK_AXIS = 'yaw'
 
 # ---------------- Serial Setup ----------------
 # windows 
-# ser = serial.Serial('COM3', 9600, timeout=1)  # <-- change COM port
+ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port
 
 # macbook
-ser = serial.Serial('/dev/tty.usbmodem101', 9600, timeout=1)  # <-- change COM port
+# ser = serial.Serial('/dev/tty.usbmodem101', 9600, timeout=1)  # <-- change COM port
 
 # ---------------- PyQtGraph 3D Setup ----------------
 app = QtWidgets.QApplication([])
