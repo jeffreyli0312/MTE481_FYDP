@@ -1,95 +1,67 @@
 #include "ICM_20948.h"
-
-//#define USE_SPI
+#include <MadgwickAHRS.h>
 
 #define SERIAL_PORT Serial
-#define SPI_PORT SPI
-#define CS_PIN 2
-
 #define WIRE_PORT Wire
 #define AD0_VAL 1
 
-#ifdef USE_SPI
-ICM_20948_SPI myICM;
-#else
 ICM_20948_I2C myICM;
-#endif
+Madgwick filter;  // Madgwick filter instance
 
 void setup() {
   SERIAL_PORT.begin(115200);
-  while (!SERIAL_PORT);
+  while(!SERIAL_PORT);
 
-#ifdef USE_SPI
-  SPI_PORT.begin();
-#else
   WIRE_PORT.begin();
   WIRE_PORT.setClock(400000);
-#endif
 
-  bool initialized = false;
-
-  while (!initialized) {
-#ifdef USE_SPI
-    myICM.begin(CS_PIN, SPI_PORT);
-#else
+  bool ok = false;
+  while(!ok) {
     myICM.begin(WIRE_PORT, AD0_VAL);
-#endif
-
-    if (myICM.status == ICM_20948_Stat_Ok) {
-      initialized = true;
-    } else {
+    if (myICM.status == ICM_20948_Stat_Ok) ok = true;
+    else {
       SERIAL_PORT.println("IMU init failed... retrying");
       delay(500);
     }
   }
 
-  // --- Initialize DMP ---
-  if (myICM.initializeDMP() != ICM_20948_Stat_Ok) {
-    SERIAL_PORT.println("DMP init failed");
-    while (1);
-  }
-
-  // Enable Quaternion output (this exists in all library versions)
-  myICM.enableDMPSensor(INV_ICM20948_SENSOR_ORIENTATION);
-
-  // Enable FIFO + DMP
-  myICM.enableDMP();
-
-  SERIAL_PORT.println("ICM-20948 DMP READY");
+  filter.begin(100);  // filter update rate ≈ 100 Hz
 }
 
 void loop() {
-  icm_20948_DMP_data_t dmp;
 
-  if (myICM.readDMPdataFromFIFO(&dmp) == ICM_20948_Stat_Ok) {
+  if (myICM.dataReady()) {
+    myICM.getAGMT();  
 
-    if (dmp.header & DMP_header_bitmap_Quat) {   // UNIVERSAL HEADER
+    // Read sensor values (convert to proper units)
+    float ax = myICM.accX() / 9.80665;           // m/s^2 → g
+    float ay = myICM.accY() / 9.80665;
+    float az = myICM.accZ() / 9.80665;
 
-      float q1 = dmp.Quat.Data.Q1;   // w
-      float q2 = dmp.Quat.Data.Q2;   // x
-      float q3 = dmp.Quat.Data.Q3;   // y
-      float q4 = dmp.Quat.Data.Q4;   // z
+    float gx = myICM.gyrX() * 0.0174533;         // deg/s → rad/s
+    float gy = myICM.gyrY() * 0.0174533;
+    float gz = myICM.gyrZ() * 0.0174533;
 
-      // Convert quaternion → roll, pitch, yaw
-      float ysqr = q3 * q3;
+    float mx = myICM.magX();
+    float my = myICM.magY();
+    float mz = myICM.magZ();
 
-      float t0 = +2.0f * (q1 * q2 + q3 * q4);
-      float t1 = +1.0f - 2.0f * (q2 * q2 + ysqr);
-      float roll = atan2(t0, t1) * 180.0f / PI;
+    // Update filter (with magnetometer)
+    filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
 
-      float t2 = +2.0f * (q1 * q3 - q4 * q2);
-      t2 = constrain(t2, -1.0f, 1.0f);
-      float pitch = asin(t2) * 180.0f / PI;
+    // Extract roll, pitch, yaw from filter
+    float roll  = filter.getRoll();
+    float pitch = filter.getPitch();
+    float yaw   = filter.getYaw();
 
-      float t3 = +2.0f * (q1 * q4 + q2 * q3);
-      float t4 = +1.0f - 2.0f * (ysqr + q4 * q4);
-      float yaw = atan2(t3, t4) * 180.0f / PI;
-      if (yaw < 0) yaw += 360.0f;
+    // Normalize yaw to [0,360)
+    if (yaw < 0) yaw += 360.0;
 
-      // Output clean CSV for Python
-      SERIAL_PORT.print(roll);  SERIAL_PORT.print(",");
-      SERIAL_PORT.print(pitch); SERIAL_PORT.print(",");
-      SERIAL_PORT.println(yaw);
-    }
+    // Output to Python
+    SERIAL_PORT.print(roll); SERIAL_PORT.print(",");
+    SERIAL_PORT.print(pitch); SERIAL_PORT.print(",");
+    SERIAL_PORT.println(yaw);
+
+    delay(5);
   }
 }
