@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 # df = pd.read_csv('10.csv') # bicep teset 2
 # df = pd.read_csv('11.csv') # bicep teset 3
 # df = pd.read_csv('12.csv') # bicep teset 4, against the wall
-df = pd.read_csv('13.csv') # bicep teset 5, against the wall + pushing up movement
+# df = pd.read_csv(r'firmware\prototype\13.csv') # bicep test 5, against the wall + pushing up movement
+df = pd.read_csv(r'firmware\prototype\13.csv')
 plt.plot(df['time'], df['yaw_deg'])
 plt.xlabel('Time (seconds)')
 plt.ylabel('Yaw Angle (degrees)')

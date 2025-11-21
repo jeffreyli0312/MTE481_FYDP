@@ -14,10 +14,10 @@ LOCK_AXIS = 'yaw'
 
 # ---------------- Serial Setup ----------------
 # windows 
-# ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port
+ser = serial.Serial('COM3', 115200, timeout=1)  # <-- change COM port
 
 # macbook
-ser = serial.Serial('/dev/tty.usbmodem101', 115200, timeout=1)  # <-- change COM port
+# ser = serial.Serial('/dev/tty.usbmodem101', 115200, timeout=1)  # <-- change COM port
 
 # ---------------- CSV Setup ----------------
 csv_filename = f"yaw_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -98,7 +98,7 @@ def update():
 
     try:
         # Clear any old data in the buffer to get the latest reading
-        ser.reset_input_buffer()
+        # ser.reset_input_buffer()
         
         line = ser.readline().decode('ascii', errors='ignore').strip()
         print(line)
