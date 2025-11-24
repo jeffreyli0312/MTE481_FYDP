@@ -1,0 +1,56 @@
+run the following in: mermaidchart.com
+
+flowchart LR
+
+    %% ==============
+    %% DEVICE / LINK
+    %% ==============
+    subgraph Device["Link Layer – ESP32"]
+        Sensors["On-body Sensors
+        (EMG, IMU, etc.)"]
+        ESP32["ESP32 Firmware"]
+        Sensors --> ESP32
+    end
+
+    %% ==============
+    %% MOBILE APP
+    %% ==============
+    subgraph Mobile["iPhone Mobile App"]
+
+        %% Link layer (central)
+        subgraph Link["Link Layer"]
+            BLEPLX["React Native BLE Library
+            (react-native-ble-plx)"]
+        end
+
+        %% Data / "backend"
+        subgraph Data["Data Management Layer"]
+            SQLite["Expo SQLite 
+            (expo-sqlite)"]
+        end
+
+        %% UI / State
+        subgraph UI["User Interface Layer"]
+            RN["React Native + Expo + NativeWind"]
+            Zustand["Zustand "]
+            
+            RN <--> Zustand
+            Zustand <--> SQLite
+        end
+
+        BLEPLX <--> Zustand
+    end
+
+    %% BLE link between device and phone
+    ESP32 <-->|"BLE (GAP advertising + GATT data)"| BLEPLX
+
+    %% ============
+    %% STYLING
+    %% ============
+    classDef deviceNode fill:#fff7ed,stroke:#ea580c,stroke-width:1px,rx:8,ry:8;
+    classDef appNode fill:#eff6ff,stroke:#2563eb,stroke-width:1px,rx:8,ry:8;
+    classDef mobileSubgraph fill:#f9fafb,stroke:#9ca3af,stroke-width:1px,rx:10,ry:10;
+
+    %% Apply styles
+    class Sensors,ESP32 deviceNode;
+    class BLEPLX,SQLite,RN,Zustand appNode;
