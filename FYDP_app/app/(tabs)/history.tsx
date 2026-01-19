@@ -346,7 +346,7 @@ export default function HistoryScreen() {
                     </View>
 
                     <View style={{ marginTop: 10 }}>
-                      {/* Fix contrast in dark mode */}
+                      {/* This text label comes from the session label in supabase */}
                       <Text
                         style={[
                           styles.bigValue,

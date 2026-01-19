@@ -21,6 +21,7 @@ const screenWidth = Dimensions.get("window").width;
 type SampleRow = {
   time: number; // ms
   ax: number;
+  yaw: number;
 };
 
 type SetData = {
@@ -28,6 +29,8 @@ type SetData = {
   avgForce: number;
   maxForce: number;
 };
+
+type MetricKey = "force" | "yaw";
 
 function formatDateOnly(iso?: string) {
   if (!iso) return "";
@@ -62,6 +65,13 @@ export default function SessionAnalyticsScreen() {
   const [samples, setSamples] = useState<SampleRow[]>([]);
   const [duration, setDuration] = useState("0m 0s");
 
+  // chart selection
+  const [metric, setMetric] = useState<MetricKey>("force");
+  const metricOptions: { key: MetricKey; label: string }[] = [
+    { key: "force", label: "Force" },
+    { key: "yaw", label: "Yaw" },
+  ];
+
   useEffect(() => {
     let cancelled = false;
 
@@ -72,7 +82,7 @@ export default function SessionAnalyticsScreen() {
 
         const { data, error } = await supabase
           .from("imu_samples")
-          .select("time, ax")
+          .select("time, ax, yaw")
           .eq("session_id", sessionId)
           .order("time", { ascending: true });
 
@@ -81,6 +91,7 @@ export default function SessionAnalyticsScreen() {
         const rows = (data ?? []).map((r: any) => ({
           time: Number(r.time),
           ax: Number(r.ax),
+          yaw: Number(r.yaw),
         }));
 
         if (rows.length >= 2) {
@@ -104,8 +115,17 @@ export default function SessionAnalyticsScreen() {
   }, [sessionId]);
 
   /* -------------------- Stats -------------------- */
+
+  const baseWidth = screenWidth - 32;
+  const chartWidth = Math.max(baseWidth, samples.length * 6); // 6px per point
+
   const forces = useMemo(
     () => samples.map((s) => Math.abs(s.ax)).filter(Number.isFinite),
+    [samples]
+  );
+
+  const yaws = useMemo(
+    () => samples.map((s) => s.yaw).filter(Number.isFinite),
     [samples]
   );
 
@@ -127,8 +147,6 @@ export default function SessionAnalyticsScreen() {
     consistency > 80 ? "Excellent" : consistency > 60 ? "Good" : "Needs Work";
 
   /* -------------------- Sets (placeholder) -------------------- */
-  // NOTE: Chart-kit BarChart isn't a true grouped bar chart like Recharts.
-  // We'll show Average Force by set (placeholder until you have real set boundaries).
   const sets: SetData[] = useMemo(() => {
     const a = avgForce;
     const m = maxForce;
@@ -138,14 +156,24 @@ export default function SessionAnalyticsScreen() {
     ];
   }, [avgForce, maxForce]);
 
-  // Show ONLY avgForce as bars (reliable in chart-kit).
   const barData = useMemo(
     () => ({
       labels: sets.map((s) => s.name),
-      datasets: [{ data: sets.map((s) => Number.isFinite(s.avgForce) ? s.avgForce : 0) }],
+      datasets: [
+        { data: sets.map((s) => (Number.isFinite(s.avgForce) ? s.avgForce : 0)) },
+      ],
     }),
     [sets]
   );
+
+  /* -------------------- Chart selection -------------------- */
+
+  const selectedSeries = metric === "force" ? forces : yaws;
+
+  const selectedTitle =
+    metric === "force"
+      ? "Force Over Time - CHANGE TO EMG DATA. ONE LINE FOR EACH MUSCLE"
+      : "Yaw Over Time - THIS IS SHOULDER FLARE";
 
   /* -------------------- Theme Tokens -------------------- */
   const C = {
@@ -165,15 +193,19 @@ export default function SessionAnalyticsScreen() {
       backgroundGradientTo: C.surface,
       decimalPlaces: 1,
       color: (opacity = 1) =>
-        dark ? `rgba(96, 165, 250, ${clamp01(opacity)})` : `rgba(37, 99, 235, ${clamp01(opacity)})`,
+        dark
+          ? `rgba(96, 165, 250, ${clamp01(opacity)})`
+          : `rgba(37, 99, 235, ${clamp01(opacity)})`,
       labelColor: (opacity = 1) =>
-        dark ? `rgba(156, 163, 175, ${clamp01(opacity)})` : `rgba(107, 114, 128, ${clamp01(opacity)})`,
+        dark
+          ? `rgba(156, 163, 175, ${clamp01(opacity)})`
+          : `rgba(107, 114, 128, ${clamp01(opacity)})`,
       propsForBackgroundLines: {
         strokeDasharray: "3 6",
         stroke: dark ? "#374151" : "#e5e7eb",
       },
     }),
-    [dark]
+    [dark, C.surface]
   );
 
   if (loading) {
@@ -233,82 +265,196 @@ export default function SessionAnalyticsScreen() {
           <StatCard title="Max Force" value={maxForce.toFixed(1)} unit="N" colors={C} />
         </View>
 
-        {/* Set Comparison */}
-        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-          <Text style={[styles.cardTitle, { color: C.text }]}>Set-by-Set Comparison</Text>
-
-          <BarChart
-            data={barData}
-            width={screenWidth - 32}
-            height={220}
-            yAxisLabel="" // REQUIRED by chart-kit types
-            yAxisSuffix="N"
-            fromZero
-            chartConfig={chartConfig}
-            style={{ borderRadius: 12 }}
-          />
-
-          <View style={{ marginTop: 8 }}>
-            <Text style={{ color: C.subtext, fontSize: 12 }}>
-              Showing <Text style={{ color: C.text, fontWeight: "700" }}>Average Force</Text> (chart-kit limitation for grouped bars).
-            </Text>
-          </View>
+        {/* Chart selector */}
+        <View
+          style={[
+            styles.segment,
+            { backgroundColor: C.surface, borderColor: C.border },
+          ]}
+        >
+          {metricOptions.map((opt) => {
+            const active = metric === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                onPress={() => setMetric(opt.key)}
+                style={[
+                  styles.segmentBtn,
+                  {
+                    backgroundColor: active ? C.blue : "transparent",
+                    borderColor: C.border,
+                  },
+                ]}
+              >
+                <Text style={{ color: active ? "#fff" : C.text, fontWeight: "700" }}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
+
+        {/* ONE chart at a time */}
+        {selectedSeries.length >= 2 && (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: C.surface,
+                borderColor: C.border,
+                borderRadius: 12,
+                overflow: "hidden",
+              },
+            ]}
+          >
+            <Text style={[styles.cardTitle, { color: C.text }]}>{selectedTitle}</Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={true}
+              indicatorStyle={dark ? "white" : "black"}
+              contentContainerStyle={{ paddingBottom: 6 }}
+            >
+              <LineChart
+                data={{
+                  labels: samples
+                    .map((s) => (s.time / 1000).toFixed(0))
+                    .map((l, i) =>
+                      i % Math.max(1, Math.floor(samples.length / 6)) === 0 ? l : ""
+                    ),
+                  datasets: [{ data: selectedSeries }],
+                }}
+                width={chartWidth}
+                height={220}
+                withDots={false}
+                withShadow={false}
+                withInnerLines
+                withOuterLines={false}
+                chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                style={{ borderRadius: 12 }}
+              />
+            </ScrollView>
+          </View>
+        )}
 
         {/* Consistency */}
         <View style={styles.consistencyCard}>
           <Text style={styles.consistencyTitle}>⚡ Consistency Score</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-end",
+            }}
+          >
             <View>
               <Text style={styles.consistencyValue}>{consistency}%</Text>
               <Text style={styles.consistencyLabel}>{consistencyLabel}</Text>
             </View>
-            <Text style={styles.consistencySideText}>Measures force stability{"\n"}across all sets</Text>
+            <Text style={styles.consistencySideText}>
+              Measures force stability{"\n"}across all sets
+            </Text>
           </View>
         </View>
 
         {/* Insights */}
-        <View style={[styles.insightCard, { backgroundColor: C.surface, borderColor: dark ? "#1d4ed8" : "#bfdbfe" }]}>
+        <View
+          style={[
+            styles.insightCard,
+            { backgroundColor: C.surface, borderColor: dark ? "#1d4ed8" : "#bfdbfe" },
+          ]}
+        >
           <Text style={[styles.cardTitle, { color: C.text }]}>💡 Performance Insights</Text>
 
-          <Insight index={1} text="Your force output varied significantly. Focus on maintaining consistent form and tempo throughout each set." colors={C} />
-          <Insight index={2} text="Light volume today. Try to aim for at least 3–5 sets to maximize your training effectiveness." colors={C} />
-          <Insight index={3} text="Building your foundation. Focus on form first, then gradually increase weight as you become more comfortable." colors={C} />
-          <Insight index={4} text="Some fatigue is visible in later sets. Ensure adequate rest between sets and proper nutrition." colors={C} />
+          <Insight
+            index={1}
+            text="Your force output varied significantly. Focus on maintaining consistent form and tempo throughout each set."
+            colors={C}
+          />
+          <Insight
+            index={2}
+            text="Light volume today. Try to aim for at least 3–5 sets to maximize your training effectiveness."
+            colors={C}
+          />
+          <Insight
+            index={3}
+            text="Building your foundation. Focus on form first, then gradually increase weight as you become more comfortable."
+            colors={C}
+          />
+          <Insight
+            index={4}
+            text="Some fatigue is visible in later sets. Ensure adequate rest between sets and proper nutrition."
+            colors={C}
+          />
         </View>
 
         {/* Next Steps */}
-        <View style={[styles.nextCard, { backgroundColor: dark ? "#0b2b1a" : "#ecfdf5", borderColor: dark ? "#14532d" : "#bbf7d0" }]}>
-          <Text style={[styles.cardTitle, { color: dark ? "#d1fae5" : "#065f46" }]}>Next Steps</Text>
+        <View
+          style={[
+            styles.nextCard,
+            {
+              backgroundColor: dark ? "#0b2b1a" : "#ecfdf5",
+              borderColor: dark ? "#14532d" : "#bbf7d0",
+            },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: dark ? "#d1fae5" : "#065f46" }]}>
+            Next Steps
+          </Text>
 
-          <Bullet text="Rest for 48–72 hours before training this muscle group again" color={dark ? "#d1fae5" : "#064e3b"} />
-          <Bullet text="Consider adding 5–10% more weight next session if consistency stays above 70%" color={dark ? "#d1fae5" : "#064e3b"} />
-          <Bullet text="Focus on maintaining proper form throughout all sets" color={dark ? "#d1fae5" : "#064e3b"} />
+          <Bullet
+            text="Rest for 48–72 hours before training this muscle group again"
+            color={dark ? "#d1fae5" : "#064e3b"}
+          />
+          <Bullet
+            text="Consider adding 5–10% more weight next session if consistency stays above 70%"
+            color={dark ? "#d1fae5" : "#064e3b"}
+          />
+          <Bullet
+            text="Focus on maintaining proper form throughout all sets"
+            color={dark ? "#d1fae5" : "#064e3b"}
+          />
         </View>
 
-        {/* Optional: Force over time line chart */}
-        {forces.length >= 2 && (
-          <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>Force Over Time</Text>
-            <LineChart
-              data={{
-                labels: samples
-                  .map((s) => (s.time / 1000).toFixed(0))
-                  .map((l, i) => (i % Math.max(1, Math.floor(samples.length / 6)) === 0 ? l : "")),
-                datasets: [{ data: forces }],
-              }}
+        {/* Set-by-Set Comparison */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: C.surface,
+              borderColor: C.border,
+              borderRadius: 12,
+              overflow: "hidden",
+            },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: C.text }]}>
+            Set-by-Set Comparison (Placeholder, Optional Chart)
+          </Text>
+
+          <View style={{ width: screenWidth - 32, alignSelf: "center" }}>
+            <BarChart
+              data={barData}
               width={screenWidth - 32}
               height={220}
-              withDots={false}
-              withShadow={false}
-              withInnerLines
-              withOuterLines={false}
-              chartConfig={chartConfig}
+              yAxisLabel=""
+              yAxisSuffix="N"
+              fromZero
+              chartConfig={{
+                ...chartConfig,
+                paddingRight: 12,
+              }}
               style={{ borderRadius: 12 }}
-              bezier
             />
           </View>
-        )}
+
+          <View style={{ marginTop: 8 }}>
+            <Text style={{ color: C.subtext, fontSize: 12 }}>
+              Showing <Text style={{ color: C.text, fontWeight: "700" }}>Average Force</Text>{" "}
+              (chart-kit limitation for grouped bars).
+            </Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -422,6 +568,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   cardTitle: { fontSize: 16, fontWeight: "700", marginBottom: 10 },
+
+  // segmented control
+  segment: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 6,
+    flexDirection: "row",
+    gap: 6,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+  },
 
   consistencyCard: {
     marginTop: 16,
