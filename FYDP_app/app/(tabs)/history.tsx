@@ -124,7 +124,7 @@ export default function HistoryScreen() {
         if (!userId) throw new Error("Not logged in");
 
         const { data, error } = await supabase
-          .from("imu_sessions")
+          .from("sessions")
           .select("id,label,created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false });
@@ -346,7 +346,7 @@ export default function HistoryScreen() {
                     </View>
 
                     <View style={{ marginTop: 10 }}>
-                      {/* This text label comes from the session label in supabase */}
+                      {/* This text label comes from the label in supabase */}
                       <Text
                         style={[
                           styles.bigValue,
@@ -367,7 +367,7 @@ export default function HistoryScreen() {
                   </Pressable>
 
                   {/* Expanded content */}
-                  {open && (
+                  {/* {open && (
                     <View style={{ marginTop: 10 }}>
                       {isLoading ? (
                         <View style={{ padding: 12 }}>
@@ -447,7 +447,7 @@ export default function HistoryScreen() {
                         </>
                       )}
                     </View>
-                  )}
+                  )} */}
                 </View>
               );
             })}
