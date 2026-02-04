@@ -19,10 +19,16 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: "#9ca3af",
       }}
     >
-      <Tabs.Screen name="homepage" options={{ title: "Home Page"}} />
-      <Tabs.Screen name="index" options={{ title: "Dashboard" }} />
+      <Tabs.Screen name="homepage" options={{ title: "Home Page" }} />
       <Tabs.Screen name="history" options={{ title: "History" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
+
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: null, // hides it from the tab bar
+        }}
+      />
     </Tabs>
   );
 }
