@@ -744,7 +744,7 @@ export default function HomePageScreen() {
           >
             <Feather name="activity" size={28} color="white" />
           </View>
-          <View style={stylesHome.welcomeTextContainer}>
+          <View style={stylesHome.welcomeTextContainer}> 
             <Text style={[stylesHome.welcomeTitle, { color: dark ? "#ffffff" : "#111827" }]}>
               Ready to Train?
             </Text>
