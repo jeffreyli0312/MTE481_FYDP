@@ -184,7 +184,7 @@ export default function SessionSetsScreen() {
                                 <Pressable
                                     onPress={() =>
                                         router.push({
-                                            pathname: "/set/[setId]",
+                                            pathname: "/set/[setId]" as const,
                                             params: { setId: st.id },
                                         })
                                     }
