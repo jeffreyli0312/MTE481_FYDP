@@ -294,9 +294,10 @@ export default function HistoryScreen() {
                     onPress={() =>
                       router.push({
                         pathname: "/session/[sessionId]",
-                        params: { sessionId: s.id, created_at: s.created_at, label: s.label ?? "" },
+                        params: { sessionId: s.id },
                       })
                     }
+
                     style={[
                       styles.sessionCard,
                       {
