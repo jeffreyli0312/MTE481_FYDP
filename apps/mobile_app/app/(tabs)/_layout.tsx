@@ -21,6 +21,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="homepage" options={{ title: "Home Page" }} />
       <Tabs.Screen name="history" options={{ title: "History" }} />
+      <Tabs.Screen name="bletest" options={{ title: "BLE" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
 
       <Tabs.Screen
