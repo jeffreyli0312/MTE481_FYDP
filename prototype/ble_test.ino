@@ -14,7 +14,10 @@ bool deviceConnected = false;
 
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) { deviceConnected = true; };
-    void onDisconnect(BLEServer* pServer) { deviceConnected = false; }
+    void onDisconnect(BLEServer* pServer) {
+        deviceConnected = false;
+        pServer->getAdvertising()->start();  // Restart so it shows up again
+    }
 };
 
 class MyCallbacks: public BLECharacteristicCallbacks {
@@ -30,7 +33,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 void setup() {
   Serial.begin(115200);
-  BLEDevice::init("ESP32_EMG_BLE");
+  BLEDevice::init("ESP32_EMG");  // Shorter name avoids advertising bugs on some ESP32 BLE stacks
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -50,8 +53,12 @@ void setup() {
   pRxCharacteristic->setCallbacks(new MyCallbacks());
 
   pService->start();
-  // Set the MTU to the maximum possible (517)
   BLEDevice::setMTU(250);
+
+  // Add service UUID to advertising so phones can discover the device
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+
   pServer->getAdvertising()->start();
   Serial.println("Waiting for a client connection to notify...");
 }

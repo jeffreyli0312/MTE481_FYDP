@@ -9,9 +9,17 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  Platform,
+  PermissionsAndroid,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { BleManager, Device, State } from "react-native-ble-plx";
+import {
+  BleManager,
+  Characteristic,
+  Device,
+  State,
+  Subscription,
+} from "react-native-ble-plx";
 import { useTheme } from "../context/ThemeContext";
 
 type ScannedDevice = {
@@ -19,6 +27,13 @@ type ScannedDevice = {
   name: string | null;
   rssi: number | null;
   device: Device;
+};
+
+type DataEntry = {
+  timestamp: string;
+  service: string;
+  characteristic: string;
+  bytes: number[];
 };
 
 function getStateLabel(state: State): string {
@@ -51,6 +66,9 @@ export default function BLETestScreen() {
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [dataLog, setDataLog] = useState<DataEntry[]>([]);
+  const notifSubsRef = useRef<Subscription[]>([]);
+  const dataScrollRef = useRef<ScrollView>(null);
 
   function getManager(): BleManager {
     if (!managerRef.current) {
@@ -73,11 +91,42 @@ export default function BLETestScreen() {
     };
   }, []);
 
-  function startScan() {
+  async function requestPermissions(): Promise<boolean> {
+    if (Platform.OS === "android") {
+      const apiLevel = Platform.Version;
+      if (apiLevel >= 31) {
+        const result = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+        return Object.values(result).every(
+          (v) => v === PermissionsAndroid.RESULTS.GRANTED
+        );
+      } else {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+    }
+    return true;
+  }
+
+  async function startScan() {
     if (bluetoothState !== State.PoweredOn) {
       Alert.alert(
         "Bluetooth off",
         "Turn on Bluetooth to scan for devices."
+      );
+      return;
+    }
+
+    const granted = await requestPermissions();
+    if (!granted) {
+      Alert.alert(
+        "Permissions required",
+        "Bluetooth permissions are needed to scan for devices."
       );
       return;
     }
@@ -125,12 +174,69 @@ export default function BLETestScreen() {
     setTimeout(() => {
       manager.stopDeviceScan();
       setIsScanning(false);
-    }, 10000);
+    }, 1000000000);
   }
 
   function stopScan() {
     getManager().stopDeviceScan();
     setIsScanning(false);
+  }
+
+  function decodeBase64ToBytes(b64: string): number[] {
+    try {
+      const raw = atob(b64);
+      return Array.from(raw, (ch) => ch.charCodeAt(0));
+    } catch {
+      return [];
+    }
+  }
+
+  async function subscribeToDevice(d: Device) {
+    let services;
+    try {
+      services = await d.services();
+    } catch {
+      return;
+    }
+
+    for (const service of services) {
+      let chars;
+      try {
+        chars = await service.characteristics();
+      } catch {
+        continue;
+      }
+
+      for (const char of chars) {
+        if (!char.isNotifiable && !char.isIndicatable) continue;
+
+        try {
+          const sub = char.monitor((error: any, c: Characteristic | null) => {
+            if (error || !c?.value) return;
+            const bytes = decodeBase64ToBytes(c.value);
+            const now = new Date();
+            const ts = now.toLocaleTimeString("en-US", { hour12: false }) +
+              "." + String(now.getMilliseconds()).padStart(3, "0");
+
+            setDataLog((prev) => {
+              const next = [
+                ...prev,
+                {
+                  timestamp: ts,
+                  service: service.uuid.slice(0, 8),
+                  characteristic: char.uuid.slice(0, 8),
+                  bytes,
+                },
+              ];
+              return next.length > 200 ? next.slice(-200) : next;
+            });
+          });
+          notifSubsRef.current.push(sub);
+        } catch {
+          // characteristic doesn't actually support monitoring
+        }
+      }
+    }
   }
 
   async function connect(device: Device) {
@@ -143,10 +249,13 @@ export default function BLETestScreen() {
       const d = await device.connect();
       await d.discoverAllServicesAndCharacteristics();
       d.onDisconnected(() => {
+        cleanupNotifications();
         setConnectedDevice(null);
         Alert.alert("Disconnected", "Device disconnected.");
       });
       setConnectedDevice(d);
+      setDataLog([]);
+      await subscribeToDevice(d);
     } catch (e: any) {
       Alert.alert("Connection failed", e?.message ?? "Could not connect.");
     } finally {
@@ -154,9 +263,15 @@ export default function BLETestScreen() {
     }
   }
 
+  function cleanupNotifications() {
+    notifSubsRef.current.forEach((s) => s.remove());
+    notifSubsRef.current = [];
+  }
+
   async function disconnect() {
     if (!connectedDevice) return;
     try {
+      cleanupNotifications();
       await connectedDevice.cancelConnection();
       setConnectedDevice(null);
     } catch (e: any) {
@@ -215,6 +330,44 @@ export default function BLETestScreen() {
             <Text style={[styles.muted, { color: textMuted }]}>
               {connectedDevice.name || connectedDevice.id}
             </Text>
+          </View>
+        )}
+
+        {/* Live Data */}
+        {connectedDevice && (
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={styles.cardRow}>
+              <Text style={[styles.cardTitle, { color: textPrimary }]}>
+                Live Data
+              </Text>
+              <Pressable onPress={() => setDataLog([])} hitSlop={12}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: accent }}>
+                  Clear
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={[styles.muted, { color: textMuted, marginBottom: 8 }]}>
+              {dataLog.length === 0
+                ? "Waiting for data from device…"
+                : `${dataLog.length} message${dataLog.length === 1 ? "" : "s"} received`}
+            </Text>
+            <ScrollView
+              ref={dataScrollRef}
+              style={[styles.dataLogContainer, { backgroundColor: dark ? "#0d0f14" : "#f0f0f0" }]}
+              onContentSizeChange={() =>
+                dataScrollRef.current?.scrollToEnd({ animated: true })
+              }
+            >
+              {dataLog.map((entry, idx) => (
+                <Text
+                  key={idx}
+                  style={[styles.dataLogLine, { color: dark ? "#a5f3fc" : "#0e7490" }]}
+                >
+                  <Text style={{ color: textMuted }}>{entry.timestamp} </Text>
+                  [{entry.bytes.join(", ")}]
+                </Text>
+              ))}
+            </ScrollView>
           </View>
         )}
 
@@ -439,5 +592,15 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 8,
+  },
+  dataLogContainer: {
+    maxHeight: 240,
+    borderRadius: 10,
+    padding: 10,
+  },
+  dataLogLine: {
+    fontSize: 12,
+    fontFamily: "monospace",
+    lineHeight: 18,
   },
 });
