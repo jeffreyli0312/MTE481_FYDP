@@ -39,6 +39,10 @@ const lightColors = {
   infoBorder: "#bfdbfe",
   infoText: "#1e3a8a",
   muted: "#6b7280",
+  warning: "#f59e0b",
+  warningBg: "#fffbeb",
+  warningBorder: "#fde68a",
+  warningText: "#92400e",
 };
 
 const darkColors = {
@@ -76,6 +80,10 @@ const darkColors = {
   infoBorder: "#1f2937",
   infoText: "#cbd5e1",
   muted: "#9ca3af",
+  warning: "#fbbf24",
+  warningBg: "#1c1917",
+  warningBorder: "#44403c",
+  warningText: "#fde68a",
 };
 
 export type AppThemeColors = typeof lightColors;
