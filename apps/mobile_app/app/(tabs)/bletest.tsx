@@ -1,17 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
-  ActivityIndicator,
   Alert,
   Platform,
   PermissionsAndroid,
 } from "react-native";
+import { Card, Text, Button, ActivityIndicator, Badge } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import {
   BleManager,
@@ -20,7 +18,7 @@ import {
   State,
   Subscription,
 } from "react-native-ble-plx";
-import { useTheme } from "../context/ThemeContext";
+import { useAppTheme } from "../theme";
 
 type ScannedDevice = {
   id: string;
@@ -56,8 +54,7 @@ function getStateLabel(state: State): string {
 }
 
 export default function BLETestScreen() {
-  const { theme } = useTheme();
-  const dark = theme === "dark";
+  const { colors, dark } = useAppTheme();
 
   const managerRef = useRef<BleManager | null>(null);
 
@@ -115,10 +112,7 @@ export default function BLETestScreen() {
 
   async function startScan() {
     if (bluetoothState !== State.PoweredOn) {
-      Alert.alert(
-        "Bluetooth off",
-        "Turn on Bluetooth to scan for devices."
-      );
+      Alert.alert("Bluetooth off", "Turn on Bluetooth to scan for devices.");
       return;
     }
 
@@ -174,7 +168,7 @@ export default function BLETestScreen() {
     setTimeout(() => {
       manager.stopDeviceScan();
       setIsScanning(false);
-    }, 1000000000);
+    }, 10000);
   }
 
   function stopScan() {
@@ -214,9 +208,12 @@ export default function BLETestScreen() {
           const sub = char.monitor((error: any, c: Characteristic | null) => {
             if (error || !c?.value) return;
             const bytes = decodeBase64ToBytes(c.value);
+            console.log("BLE data:", bytes);
             const now = new Date();
-            const ts = now.toLocaleTimeString("en-US", { hour12: false }) +
-              "." + String(now.getMilliseconds()).padStart(3, "0");
+            const ts =
+              now.toLocaleTimeString("en-US", { hour12: false }) +
+              "." +
+              String(now.getMilliseconds()).padStart(3, "0");
 
             setDataLog((prev) => {
               const next = [
@@ -247,6 +244,7 @@ export default function BLETestScreen() {
     setConnectingId(device.id);
     try {
       const d = await device.connect();
+      await d.requestMTU(256);
       await d.discoverAllServicesAndCharacteristics();
       d.onDisconnected(() => {
         cleanupNotifications();
@@ -280,144 +278,150 @@ export default function BLETestScreen() {
   }
 
   const isReady = bluetoothState === State.PoweredOn;
-  const cardBg = dark ? "#1e2128" : "#ffffff";
-  const cardBorder = dark ? "#2b2f3a" : "#e5e7eb";
-  const textPrimary = dark ? "#ffffff" : "#111827";
-  const textMuted = dark ? "#9ca3af" : "#6b7280";
-  const accent = dark ? "#60a5fa" : "#2563eb";
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: dark ? "#14161c" : "#f5f5f5" }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text style={[styles.pageTitle, { color: textPrimary }]}>
+      <Text variant="titleLarge" style={[styles.pageTitle, { color: colors.onSurface }]}>
         BLE
       </Text>
 
       <ScrollView
         contentContainerStyle={styles.scroll}
-        style={{ backgroundColor: dark ? "#14161c" : "#f5f5f5" }}
+        style={{ backgroundColor: colors.background }}
       >
         {/* Status */}
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-          <View style={styles.cardRow}>
-            <Text style={[styles.cardTitle, { color: textPrimary }]}>
-              Bluetooth
+        <Card style={styles.card} mode="outlined">
+          <Card.Content>
+            <View style={styles.cardRow}>
+              <Text variant="titleSmall">Bluetooth</Text>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: isReady ? colors.success : colors.error },
+                ]}
+              />
+            </View>
+            <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
+              {getStateLabel(bluetoothState)}
             </Text>
-            <View
-              style={[
-                styles.dot,
-                { backgroundColor: isReady ? "#22c55e" : "#ef4444" },
-              ]}
-            />
-          </View>
-          <Text style={[styles.muted, { color: textMuted }]}>
-            {getStateLabel(bluetoothState)}
-          </Text>
-        </View>
+          </Card.Content>
+        </Card>
 
         {/* Connected device */}
         {connectedDevice && (
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={styles.cardRow}>
-              <Text style={[styles.cardTitle, { color: textPrimary }]}>
-                Connected
+          <Card style={styles.card} mode="outlined">
+            <Card.Content>
+              <View style={styles.cardRow}>
+                <Text variant="titleSmall">Connected</Text>
+                <Button mode="text" onPress={disconnect} compact textColor={colors.error}>
+                  Disconnect
+                </Button>
+              </View>
+              <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
+                {connectedDevice.name || connectedDevice.id}
               </Text>
-              <Pressable onPress={disconnect} hitSlop={12}>
-                <Text style={styles.disconnectText}>Disconnect</Text>
-              </Pressable>
-            </View>
-            <Text style={[styles.muted, { color: textMuted }]}>
-              {connectedDevice.name || connectedDevice.id}
-            </Text>
-          </View>
+            </Card.Content>
+          </Card>
         )}
 
         {/* Live Data */}
         {connectedDevice && (
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={styles.cardRow}>
-              <Text style={[styles.cardTitle, { color: textPrimary }]}>
-                Live Data
-              </Text>
-              <Pressable onPress={() => setDataLog([])} hitSlop={12}>
-                <Text style={{ fontSize: 14, fontWeight: "600", color: accent }}>
-                  Clear
-                </Text>
-              </Pressable>
-            </View>
-            <Text style={[styles.muted, { color: textMuted, marginBottom: 8 }]}>
-              {dataLog.length === 0
-                ? "Waiting for data from device…"
-                : `${dataLog.length} message${dataLog.length === 1 ? "" : "s"} received`}
-            </Text>
-            <ScrollView
-              ref={dataScrollRef}
-              style={[styles.dataLogContainer, { backgroundColor: dark ? "#0d0f14" : "#f0f0f0" }]}
-              onContentSizeChange={() =>
-                dataScrollRef.current?.scrollToEnd({ animated: true })
-              }
-            >
-              {dataLog.map((entry, idx) => (
-                <Text
-                  key={idx}
-                  style={[styles.dataLogLine, { color: dark ? "#a5f3fc" : "#0e7490" }]}
+          <Card style={styles.card} mode="outlined">
+            <Card.Content>
+              <View style={styles.cardRow}>
+                <Text variant="titleSmall">Live Data</Text>
+                <Button
+                  mode="text"
+                  onPress={() => setDataLog([])}
+                  compact
+                  textColor={colors.primary}
                 >
-                  <Text style={{ color: textMuted }}>{entry.timestamp} </Text>
-                  [{entry.bytes.join(", ")}]
-                </Text>
-              ))}
-            </ScrollView>
-          </View>
+                  Clear
+                </Button>
+              </View>
+              <Text
+                variant="bodySmall"
+                style={{ color: colors.onSurfaceVariant, marginTop: 4, marginBottom: 8 }}
+              >
+                {dataLog.length === 0
+                  ? "Waiting for data from device..."
+                  : `${dataLog.length} message${dataLog.length === 1 ? "" : "s"} received`}
+              </Text>
+              <ScrollView
+                ref={dataScrollRef}
+                style={[
+                  styles.dataLogContainer,
+                  { backgroundColor: dark ? "#0d0f14" : "#f0f0f0" },
+                ]}
+                onContentSizeChange={() =>
+                  dataScrollRef.current?.scrollToEnd({ animated: true })
+                }
+              >
+                {dataLog.map((entry, idx) => (
+                  <Text
+                    key={idx}
+                    style={[
+                      styles.dataLogLine,
+                      { color: dark ? "#a5f3fc" : "#0e7490" },
+                    ]}
+                  >
+                    <Text style={{ color: colors.onSurfaceVariant }}>
+                      {entry.timestamp}{" "}
+                    </Text>
+                    [{entry.bytes.join(", ")}]
+                  </Text>
+                ))}
+              </ScrollView>
+            </Card.Content>
+          </Card>
         )}
 
         {/* Scan */}
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-          <Text style={[styles.cardTitle, { color: textPrimary }]}>
-            Scan
-          </Text>
-          <Pressable
-            onPress={isScanning ? stopScan : startScan}
-            disabled={!isReady || !!connectingId}
-            style={[
-              styles.primaryBtn,
-              {
-                backgroundColor:
-                  isReady && !connectingId ? accent : dark ? "#374151" : "#d1d5db",
-              },
-            ]}
-          >
-            {isScanning ? (
-              <>
-                <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.btnText}>Stop</Text>
-              </>
-            ) : (
-              <>
-                <Feather name="search" size={18} color="#fff" />
-                <Text style={styles.btnText}>Scan (10s)</Text>
-              </>
+        <Card style={styles.card} mode="outlined">
+          <Card.Content>
+            <Text variant="titleSmall">Scan</Text>
+            <Button
+              mode="contained"
+              onPress={isScanning ? stopScan : startScan}
+              disabled={!isReady || !!connectingId}
+              icon={isScanning ? undefined : "magnify"}
+              loading={isScanning}
+              style={styles.scanBtn}
+              buttonColor={colors.primary}
+              textColor={colors.onPrimary}
+            >
+              {isScanning ? "Stop" : "Scan (10s)"}
+            </Button>
+            {isScanning && (
+              <Text
+                variant="labelSmall"
+                style={{ color: colors.onSurfaceVariant, marginTop: 8, fontStyle: "italic" }}
+              >
+                Scanning...
+              </Text>
             )}
-          </Pressable>
-          {isScanning && (
-            <Text style={[styles.hint, { color: textMuted }]}>
-              Scanning…
-            </Text>
-          )}
-        </View>
+          </Card.Content>
+        </Card>
 
         {/* Device list */}
-        <Text style={[styles.sectionTitle, { color: textPrimary }]}>
+        <Text variant="titleMedium" style={{ color: colors.onSurface, marginBottom: 12 }}>
           Devices ({devices.length})
         </Text>
 
         {devices.length === 0 && !isScanning && (
-          <View style={[styles.card, styles.emptyCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <Feather name="bluetooth" size={28} color={textMuted} />
-            <Text style={[styles.muted, { color: textMuted }]}>
-              Start a scan to see devices.
-            </Text>
-          </View>
+          <Card style={[styles.card, styles.emptyCard]} mode="outlined">
+            <Card.Content style={{ alignItems: "center" }}>
+              <Feather name="bluetooth" size={28} color={colors.onSurfaceVariant} />
+              <Text
+                variant="bodyMedium"
+                style={{ color: colors.onSurfaceVariant, marginTop: 8 }}
+              >
+                Start a scan to see devices.
+              </Text>
+            </Card.Content>
+          </Card>
         )}
 
         {devices.map((item) => {
@@ -426,47 +430,52 @@ export default function BLETestScreen() {
           const canTap = isReady && !connectedDevice && !isConnecting;
 
           return (
-            <Pressable
+            <Card
               key={item.id}
-              onPress={() => canTap && connect(item.device)}
-              disabled={!canTap}
               style={[
                 styles.deviceCard,
                 {
-                  backgroundColor: cardBg,
-                  borderColor: isConnected ? "#22c55e" : cardBorder,
+                  borderColor: isConnected ? colors.success : colors.outline,
                   opacity: canTap ? 1 : 0.7,
                 },
               ]}
+              mode="outlined"
+              onPress={() => canTap && connect(item.device)}
             >
-              <View style={styles.deviceLeft}>
-                <Feather
-                  name="bluetooth"
-                  size={18}
-                  color={isConnected ? "#22c55e" : textMuted}
-                />
-                <View>
-                  <Text style={[styles.deviceName, { color: textPrimary }]}>
-                    {item.name || "Unknown"}
-                  </Text>
-                  <Text style={[styles.deviceId, { color: textMuted }]}>
-                    {item.id}
-                  </Text>
-                  {item.rssi != null && (
-                    <Text style={[styles.deviceRssi, { color: textMuted }]}>
-                      RSSI: {item.rssi}
+              <Card.Content style={styles.deviceContent}>
+                <View style={styles.deviceLeft}>
+                  <Feather
+                    name="bluetooth"
+                    size={18}
+                    color={isConnected ? colors.success : colors.onSurfaceVariant}
+                  />
+                  <View>
+                    <Text variant="titleSmall">{item.name || "Unknown"}</Text>
+                    <Text
+                      variant="labelSmall"
+                      style={{ color: colors.onSurfaceVariant, fontFamily: "monospace", marginTop: 2 }}
+                    >
+                      {item.id}
                     </Text>
-                  )}
+                    {item.rssi != null && (
+                      <Text
+                        variant="labelSmall"
+                        style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+                      >
+                        RSSI: {item.rssi}
+                      </Text>
+                    )}
+                  </View>
                 </View>
-              </View>
-              {isConnecting ? (
-                <ActivityIndicator size="small" color={accent} />
-              ) : isConnected ? (
-                <Text style={styles.connectedBadge}>Connected</Text>
-              ) : canTap ? (
-                <Feather name="chevron-right" size={20} color={textMuted} />
-              ) : null}
-            </Pressable>
+                {isConnecting ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : isConnected ? (
+                  <Badge style={{ backgroundColor: colors.success }}>Connected</Badge>
+                ) : canTap ? (
+                  <Feather name="chevron-right" size={20} color={colors.onSurfaceVariant} />
+                ) : null}
+              </Card.Content>
+            </Card>
           );
         })}
       </ScrollView>
@@ -475,12 +484,8 @@ export default function BLETestScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-  },
+  safe: { flex: 1 },
   pageTitle: {
-    fontSize: 22,
-    fontWeight: "600",
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
@@ -489,109 +494,40 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   card: {
-    borderRadius: 16,
-    padding: 16,
     marginBottom: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: "#000",
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    elevation: 4,
+    borderRadius: 16,
   },
   cardRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  muted: {
-    fontSize: 14,
-    marginTop: 4,
-  },
   dot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
-  disconnectText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ef4444",
-  },
-  primaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+  scanBtn: {
     marginTop: 12,
-  },
-  btnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  hint: {
-    fontSize: 12,
-    marginTop: 8,
-    fontStyle: "italic",
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
+    borderRadius: 12,
   },
   emptyCard: {
-    alignItems: "center",
-    paddingVertical: 24,
+    paddingVertical: 8,
   },
   deviceCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+  },
+  deviceContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    elevation: 4,
   },
   deviceLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     flex: 1,
-  },
-  deviceName: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  deviceId: {
-    fontSize: 11,
-    fontFamily: "monospace",
-    marginTop: 2,
-  },
-  deviceRssi: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  connectedBadge: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#fff",
-    backgroundColor: "#22c55e",
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
   },
   dataLogContainer: {
     maxHeight: 240,
