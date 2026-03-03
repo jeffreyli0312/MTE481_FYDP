@@ -1,9 +1,10 @@
-
 import { Tabs, Redirect } from "expo-router";
 import { useAuth } from "../context/AuthContext";
+import { useAppTheme } from "../theme";
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
+  const { colors } = useAppTheme();
 
   if (loading) return null;
 
@@ -12,21 +13,22 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: "#14161c" },
-        headerTintColor: "#ffffff",
-        tabBarStyle: { backgroundColor: "#14161c" },
-        tabBarActiveTintColor: "#60a5fa",
-        tabBarInactiveTintColor: "#9ca3af",
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.onSurface,
+        tabBarStyle: { backgroundColor: colors.surface },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.onSurfaceVariant,
       }}
     >
       <Tabs.Screen name="homepage" options={{ title: "Home Page" }} />
       <Tabs.Screen name="history" options={{ title: "History" }} />
+      <Tabs.Screen name="bletest" options={{ title: "BLE" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
 
       <Tabs.Screen
         name="index"
         options={{
-          href: null, // hides it from the tab bar
+          href: null,
         }}
       />
     </Tabs>
