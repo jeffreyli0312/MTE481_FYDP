@@ -61,6 +61,7 @@ const db = SQLite.openDatabaseSync("ble.db");
 function initDb() {
   db.execSync(`
     PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -71,10 +72,23 @@ function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+    CREATE TABLE IF NOT EXISTS sets (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      label TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sets_session ON sets(session_id);
+
     CREATE TABLE IF NOT EXISTS samples (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
+      set_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
+
       t_ms INTEGER NOT NULL,
 
       emg_left_tricep INTEGER,
@@ -90,11 +104,14 @@ function initDb() {
 
       received_at INTEGER NOT NULL,
       service_uuid TEXT,
-      characteristic_uuid TEXT
+      characteristic_uuid TEXT,
+
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
     );
 
+    CREATE INDEX IF NOT EXISTS idx_samples_set_time ON samples(set_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
-    CREATE INDEX IF NOT EXISTS idx_samples_user_time ON samples(user_id, t_ms);
   `);
 }
 
@@ -159,6 +176,7 @@ export default function BLETestScreen() {
   const dataScrollRef = useRef<ScrollView>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [setId, setSetId] = useState<string | null>(null);
 
   function startSessionRow(user_id: string, device_id?: string) {
     const sid = newId();
@@ -173,6 +191,21 @@ export default function BLETestScreen() {
   function endSessionRow(sid: string) {
     db.runSync(`UPDATE sessions SET ended_at = ? WHERE id = ?`, [Date.now(), sid]);
   }
+
+  function startSetRow(user_id: string, session_id: string, label?: string) {
+  const sid = newId(); // set id
+  db.runSync(
+    `INSERT INTO sets (id, session_id, user_id, label, started_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [sid, session_id, user_id, label ?? null, Date.now()]
+  );
+  setSetId(sid);
+  return sid;
+}
+
+function endSetRow(set_id: string) {
+  db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), set_id]);
+}
 
   function getManager(): BleManager {
     if (!managerRef.current) {
