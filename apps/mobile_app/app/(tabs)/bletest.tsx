@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import * as SQLite from "expo-sqlite";
 import {
   View,
   StyleSheet,
@@ -21,6 +20,16 @@ import {
   Subscription,
 } from "react-native-ble-plx";
 import { useAppTheme } from "../theme";
+
+// ✅ Use bleDb.ts for ALL DB work (schema + inserts)
+import {
+  initBleDb,
+  insertSession,
+  insertSet,
+  endSession,
+  endSet,
+  insertSample,
+} from "../(tabs)/bleDb";
 
 type ScannedDevice = {
   id: string;
@@ -56,65 +65,7 @@ function getStateLabel(state: State): string {
   }
 }
 
-// Setup for SQLLite below
-const db = SQLite.openDatabaseSync("ble.db");
-function initDb() {
-  db.execSync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      device_id TEXT,
-      started_at INTEGER NOT NULL,
-      ended_at INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-
-    CREATE TABLE IF NOT EXISTS sets (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      label TEXT,
-      started_at INTEGER NOT NULL,
-      ended_at INTEGER,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_sets_session ON sets(session_id);
-
-    CREATE TABLE IF NOT EXISTS samples (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      set_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-
-      t_ms INTEGER NOT NULL,
-
-      emg_left_tricep INTEGER,
-      emg_left_pec INTEGER,
-      emg_right_tricep INTEGER,
-      emg_right_pec INTEGER,
-
-      l_accx INTEGER, l_accy INTEGER, l_accz INTEGER,
-      l_gyrx INTEGER, l_gyry INTEGER, l_gyrz INTEGER,
-
-      r_accx INTEGER, r_accy INTEGER, r_accz INTEGER,
-      r_gyrx INTEGER, r_gyry INTEGER, r_gyrz INTEGER,
-
-      received_at INTEGER NOT NULL,
-      service_uuid TEXT,
-      characteristic_uuid TEXT,
-
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-      FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_samples_set_time ON samples(set_id, t_ms);
-    CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
-  `);
-}
-
+// ---- Packet parsing helpers ----
 function readUint32LE(bytes: number[], offset: number) {
   return (
     (bytes[offset] |
@@ -157,6 +108,7 @@ function parsePacket(bytes: number[]) {
   };
 }
 
+// ---- ID generator (kept in this file; bleDb.ts is a pure writer) ----
 function newId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -165,6 +117,8 @@ export default function BLETestScreen() {
   const { colors, dark } = useAppTheme();
 
   const managerRef = useRef<BleManager | null>(null);
+  const notifSubsRef = useRef<Subscription[]>([]);
+  const dataScrollRef = useRef<ScrollView>(null);
 
   const [bluetoothState, setBluetoothState] = useState<State>(State.Unknown);
   const [isScanning, setIsScanning] = useState(false);
@@ -172,51 +126,20 @@ export default function BLETestScreen() {
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [dataLog, setDataLog] = useState<DataEntry[]>([]);
-  const notifSubsRef = useRef<Subscription[]>([]);
-  const dataScrollRef = useRef<ScrollView>(null);
+
   const [userId, setUserId] = useState<string | null>(null);
+
+  // These are the active IDs used to tag every sample row
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [setId, setSetId] = useState<string | null>(null);
 
-  function startSessionRow(user_id: string, device_id?: string) {
-    const sid = newId();
-    db.runSync(
-      `INSERT INTO sessions (id, user_id, device_id, started_at) VALUES (?, ?, ?, ?)`,
-      [sid, user_id, device_id ?? null, Date.now()]
-    );
-    setSessionId(sid);
-    return sid;
-  }
-
-  function endSessionRow(sid: string) {
-    db.runSync(`UPDATE sessions SET ended_at = ? WHERE id = ?`, [Date.now(), sid]);
-  }
-
-  function startSetRow(user_id: string, session_id: string, label?: string) {
-  const sid = newId(); // set id
-  db.runSync(
-    `INSERT INTO sets (id, session_id, user_id, label, started_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [sid, session_id, user_id, label ?? null, Date.now()]
-  );
-  setSetId(sid);
-  return sid;
-}
-
-function endSetRow(set_id: string) {
-  db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), set_id]);
-}
-
   function getManager(): BleManager {
-    if (!managerRef.current) {
-      managerRef.current = new BleManager();
-    }
+    if (!managerRef.current) managerRef.current = new BleManager();
     return managerRef.current;
   }
 
   useEffect(() => {
     const manager = getManager();
-
     manager.state().then((s) => setBluetoothState(s));
     const sub = manager.onStateChange((s) => setBluetoothState(s));
 
@@ -228,6 +151,7 @@ function endSetRow(set_id: string) {
     };
   }, []);
 
+  // Load userId from Supabase
   useEffect(() => {
     let cancelled = false;
 
@@ -254,8 +178,9 @@ function endSetRow(set_id: string) {
     };
   }, []);
 
+  // ✅ DB schema init from bleDb.ts
   useEffect(() => {
-    initDb();
+    initBleDb();
   }, []);
 
   async function requestPermissions(): Promise<boolean> {
@@ -299,41 +224,24 @@ function endSetRow(set_id: string) {
     setIsScanning(true);
     setDevices([]);
 
-    manager.startDeviceScan(
-      null,
-      { allowDuplicates: false },
-      (error, device) => {
-        if (error) {
-          setIsScanning(false);
-          Alert.alert("Scan error", error.message);
-          return;
-        }
-        if (device) {
-          setDevices((prev) => {
-            const i = prev.findIndex((d) => d.id === device.id);
-            if (i >= 0) {
-              const next = [...prev];
-              next[i] = {
-                id: device.id,
-                name: device.name ?? null,
-                rssi: device.rssi,
-                device,
-              };
-              return next;
-            }
-            return [
-              ...prev,
-              {
-                id: device.id,
-                name: device.name ?? null,
-                rssi: device.rssi,
-                device,
-              },
-            ];
-          });
-        }
+    manager.startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
+      if (error) {
+        setIsScanning(false);
+        Alert.alert("Scan error", error.message);
+        return;
       }
-    );
+      if (device) {
+        setDevices((prev) => {
+          const i = prev.findIndex((d) => d.id === device.id);
+          if (i >= 0) {
+            const next = [...prev];
+            next[i] = { id: device.id, name: device.name ?? null, rssi: device.rssi, device };
+            return next;
+          }
+          return [...prev, { id: device.id, name: device.name ?? null, rssi: device.rssi, device }];
+        });
+      }
+    });
 
     setTimeout(() => {
       manager.stopDeviceScan();
@@ -346,6 +254,13 @@ function endSetRow(set_id: string) {
     setIsScanning(false);
   }
 
+  function cleanupNotifications() {
+    notifSubsRef.current.forEach((s) => s.remove());
+    notifSubsRef.current = [];
+  }
+
+  // NOTE: atob may not exist in all RN setups without a polyfill.
+  // Keep as-is since your current code uses it.
   function decodeBase64ToBytes(b64: string): number[] {
     try {
       const raw = atob(b64);
@@ -355,7 +270,7 @@ function endSetRow(set_id: string) {
     }
   }
 
-  async function subscribeToDevice(d: Device, uid: string, sid: string) {
+  async function subscribeToDevice(d: Device, uid: string, sid: string, setid: string) {
     let services;
     try {
       services = await d.services();
@@ -377,74 +292,23 @@ function endSetRow(set_id: string) {
         try {
           const sub = char.monitor((error: any, c: Characteristic | null) => {
             if (error || !c?.value) return;
-            const bytes = decodeBase64ToBytes(c.value);
-            /* Assume bytes has format
-            
-            | Byte Index | Meaning |
-            |------------|---------|
-            | 0-3        | timestamp (uint32, ms) |
-            | 4-5        | left_tricep EMG (int16) |
-            | 6-7        | left_pec EMG (int16) |
-            | 8-9        | right_tricep EMG (int16) |
-            | 10-11      | right_pec EMG (int16) |
-            | 12-13      | left accx (int16) |
-            | 14-15      | left accy (int16) |
-            | 16-17      | left accz (int16) |
-            | 18-19      | left gyrx (int16) |
-            | 20-21      | left gyry (int16) |
-            | 22-23      | left gyrz (int16) |
-            | 24-25      | right accx (int16) |
-            | 26-27      | right accy (int16) |
-            | 28-29      | right accz (int16) |
-            | 30-31      | right gyrx (int16) |
-            | 32-33      | right gyry (int16) |
-            | 34-35      | right gyrz (int16) |
-            */
 
+            const bytes = decodeBase64ToBytes(c.value);
             const parsed = parsePacket(bytes);
             if (!parsed) return;
 
-            if (!uid || !sid) return;
+            // ✅ Write using bleDb.ts (includes session_id + set_id + user_id + all sensor fields)
+            insertSample({
+              userId: uid,
+              sessionId: sid,
+              setId: setid,
+              parsed,
+              serviceUuid: service.uuid,
+              characteristicUuid: char.uuid,
+              receivedAt: Date.now(),
+            });
 
-            db.runSync(
-              `INSERT INTO samples (
-    session_id, user_id, t_ms,
-    emg_left_tricep, emg_left_pec, emg_right_tricep, emg_right_pec,
-    l_accx, l_accy, l_accz, l_gyrx, l_gyry, l_gyrz,
-    r_accx, r_accy, r_accz, r_gyrx, r_gyry, r_gyrz,
-    received_at, service_uuid, characteristic_uuid
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                sid,
-                uid,
-                parsed.t_ms,
-
-                parsed.emg_left_tricep,
-                parsed.emg_left_pec,
-                parsed.emg_right_tricep,
-                parsed.emg_right_pec,
-
-                parsed.l_accx,
-                parsed.l_accy,
-                parsed.l_accz,
-                parsed.l_gyrx,
-                parsed.l_gyry,
-                parsed.l_gyrz,
-
-                parsed.r_accx,
-                parsed.r_accy,
-                parsed.r_accz,
-                parsed.r_gyrx,
-                parsed.r_gyry,
-                parsed.r_gyrz,
-
-                Date.now(),
-                service.uuid,
-                char.uuid,
-              ]
-            );
-
-            console.log("BLE data:", bytes);
+            // UI log
             const now = new Date();
             const ts =
               now.toLocaleTimeString("en-US", { hour12: false }) +
@@ -465,9 +329,10 @@ function endSetRow(set_id: string) {
               return next.length > 200 ? next.slice(-200) : next;
             });
           });
+
           notifSubsRef.current.push(sub);
         } catch {
-          // characteristic doesn't actually support monitoring
+          // ignore chars that can't be monitored
         }
       }
     }
@@ -478,31 +343,57 @@ function endSetRow(set_id: string) {
       Alert.alert("Disconnect the current device first.");
       return;
     }
+
     setConnectingId(device.id);
+
     try {
       const d = await device.connect();
       await d.requestMTU(256);
       await d.discoverAllServicesAndCharacteristics();
+
       d.onDisconnected(() => {
         cleanupNotifications();
 
+        // Close set/session in DB
+        if (setId) {
+          endSet(setId);
+          setSetId(null);
+        }
         if (sessionId) {
-          endSessionRow(sessionId);
+          endSession(sessionId);
           setSessionId(null);
         }
 
         setConnectedDevice(null);
         Alert.alert("Disconnected", "Device disconnected.");
       });
+
       setConnectedDevice(d);
       setDataLog([]);
 
       if (!userId) throw new Error("Not logged in");
 
-      // start a new sqlite session for this connection
-      const sid = startSessionRow(userId, d.id);
+      // ✅ Generate IDs here, write session + set rows via bleDb.ts
+      const sid = newId();
+      const setid = newId();
 
-      await subscribeToDevice(d, userId, sid);
+      insertSession({
+        sessionId: sid,
+        userId,
+        deviceId: d.id,
+      });
+
+      insertSet({
+        setId: setid,
+        sessionId: sid,
+        userId,
+        label: "default",
+      });
+
+      setSessionId(sid);
+      setSetId(setid);
+
+      await subscribeToDevice(d, userId, sid, setid);
     } catch (e: any) {
       Alert.alert("Connection failed", e?.message ?? "Could not connect.");
     } finally {
@@ -510,18 +401,19 @@ function endSetRow(set_id: string) {
     }
   }
 
-  function cleanupNotifications() {
-    notifSubsRef.current.forEach((s) => s.remove());
-    notifSubsRef.current = [];
-  }
-
   async function disconnect() {
     if (!connectedDevice) return;
+
     try {
       cleanupNotifications();
 
+      // Close set/session in DB
+      if (setId) {
+        endSet(setId);
+        setSetId(null);
+      }
       if (sessionId) {
-        endSessionRow(sessionId);
+        endSession(sessionId);
         setSessionId(null);
       }
 
@@ -542,10 +434,7 @@ function endSetRow(set_id: string) {
         BLE
       </Text>
 
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        style={{ backgroundColor: colors.background }}
-      >
+      <ScrollView contentContainerStyle={styles.scroll} style={{ backgroundColor: colors.background }}>
         {/* Status */}
         <Card style={styles.card} mode="outlined">
           <Card.Content>
@@ -577,6 +466,15 @@ function endSetRow(set_id: string) {
               <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
                 {connectedDevice.name || connectedDevice.id}
               </Text>
+              {/* Debug: show active ids */}
+              {sessionId && setId && (
+                <Text
+                  variant="labelSmall"
+                  style={{ color: colors.onSurfaceVariant, marginTop: 6, fontFamily: "monospace" }}
+                >
+                  session={sessionId.slice(0, 10)}… set={setId.slice(0, 10)}…
+                </Text>
+              )}
             </Card.Content>
           </Card>
         )}
@@ -587,15 +485,11 @@ function endSetRow(set_id: string) {
             <Card.Content>
               <View style={styles.cardRow}>
                 <Text variant="titleSmall">Live Data</Text>
-                <Button
-                  mode="text"
-                  onPress={() => setDataLog([])}
-                  compact
-                  textColor={colors.primary}
-                >
+                <Button mode="text" onPress={() => setDataLog([])} compact textColor={colors.primary}>
                   Clear
                 </Button>
               </View>
+
               <Text
                 variant="bodySmall"
                 style={{ color: colors.onSurfaceVariant, marginTop: 4, marginBottom: 8 }}
@@ -604,15 +498,14 @@ function endSetRow(set_id: string) {
                   ? "Waiting for data from device..."
                   : `${dataLog.length} message${dataLog.length === 1 ? "" : "s"} received`}
               </Text>
+
               <ScrollView
                 ref={dataScrollRef}
                 style={[
                   styles.dataLogContainer,
                   { backgroundColor: dark ? "#0d0f14" : "#f0f0f0" },
                 ]}
-                onContentSizeChange={() =>
-                  dataScrollRef.current?.scrollToEnd({ animated: true })
-                }
+                onContentSizeChange={() => dataScrollRef.current?.scrollToEnd({ animated: true })}
               >
                 {dataLog.map((entry, idx) => (
                   <Text
@@ -622,9 +515,7 @@ function endSetRow(set_id: string) {
                       { color: dark ? "#a5f3fc" : "#0e7490" },
                     ]}
                   >
-                    <Text style={{ color: colors.onSurfaceVariant }}>
-                      {entry.timestamp}{" "}
-                    </Text>
+                    <Text style={{ color: colors.onSurfaceVariant }}>{entry.timestamp} </Text>
                     [{entry.bytes.join(", ")}]
                   </Text>
                 ))}
@@ -669,10 +560,7 @@ function endSetRow(set_id: string) {
           <Card style={[styles.card, styles.emptyCard]} mode="outlined">
             <Card.Content style={{ alignItems: "center" }}>
               <Feather name="bluetooth" size={28} color={colors.onSurfaceVariant} />
-              <Text
-                variant="bodyMedium"
-                style={{ color: colors.onSurfaceVariant, marginTop: 8 }}
-              >
+              <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 8 }}>
                 Start a scan to see devices.
               </Text>
             </Card.Content>
@@ -708,20 +596,22 @@ function endSetRow(set_id: string) {
                     <Text variant="titleSmall">{item.name || "Unknown"}</Text>
                     <Text
                       variant="labelSmall"
-                      style={{ color: colors.onSurfaceVariant, fontFamily: "monospace", marginTop: 2 }}
+                      style={{
+                        color: colors.onSurfaceVariant,
+                        fontFamily: "monospace",
+                        marginTop: 2,
+                      }}
                     >
                       {item.id}
                     </Text>
                     {item.rssi != null && (
-                      <Text
-                        variant="labelSmall"
-                        style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
-                      >
+                      <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginTop: 2 }}>
                         RSSI: {item.rssi}
                       </Text>
                     )}
                   </View>
                 </View>
+
                 {isConnecting ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : isConnected ? (
