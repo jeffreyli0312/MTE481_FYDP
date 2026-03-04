@@ -9,19 +9,11 @@ export type ParsedSample = {
   emg_right_tricep: number;
   emg_right_pec: number;
 
-  l_accx: number;
-  l_accy: number;
-  l_accz: number;
-  l_gyrx: number;
-  l_gyry: number;
-  l_gyrz: number;
+  l_accx: number; l_accy: number; l_accz: number;
+  l_gyrx: number; l_gyry: number; l_gyrz: number;
 
-  r_accx: number;
-  r_accy: number;
-  r_accz: number;
-  r_gyrx: number;
-  r_gyry: number;
-  r_gyrz: number;
+  r_accx: number; r_accy: number; r_accz: number;
+  r_gyrx: number; r_gyry: number; r_gyrz: number;
 };
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -29,10 +21,6 @@ let db: SQLite.SQLiteDatabase | null = null;
 function getDb() {
   if (!db) db = SQLite.openDatabaseSync("ble.db");
   return db;
-}
-
-function newId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export function initBleDb() {
@@ -94,14 +82,39 @@ export function initBleDb() {
   `);
 }
 
-export function startSession(userId: string, deviceId?: string) {
+/** Called by HomePage when user clicks "New Session" */
+export function insertSession(args: {
+  sessionId: string;
+  userId: string;
+  deviceId?: string;
+  startedAt?: number;
+}) {
   const db = getDb();
-  const sessionId = newId();
   db.runSync(
     `INSERT INTO sessions (id, user_id, device_id, started_at) VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, deviceId ?? null, Date.now()]
+    [args.sessionId, args.userId, args.deviceId ?? null, args.startedAt ?? Date.now()]
   );
-  return sessionId;
+}
+
+/** Called by HomePage when user clicks "New Set" */
+export function insertSet(args: {
+  setId: string;
+  sessionId: string;
+  userId: string;
+  label?: string;
+  startedAt?: number;
+}) {
+  const db = getDb();
+  db.runSync(
+    `INSERT INTO sets (id, session_id, user_id, label, started_at) VALUES (?, ?, ?, ?, ?)`,
+    [
+      args.setId,
+      args.sessionId,
+      args.userId,
+      args.label ?? null,
+      args.startedAt ?? Date.now(),
+    ]
+  );
 }
 
 export function endSession(sessionId: string) {
@@ -109,21 +122,12 @@ export function endSession(sessionId: string) {
   db.runSync(`UPDATE sessions SET ended_at = ? WHERE id = ?`, [Date.now(), sessionId]);
 }
 
-export function startSet(userId: string, sessionId: string, label?: string) {
-  const db = getDb();
-  const setId = newId();
-  db.runSync(
-    `INSERT INTO sets (id, session_id, user_id, label, started_at) VALUES (?, ?, ?, ?, ?)`,
-    [setId, sessionId, userId, label ?? null, Date.now()]
-  );
-  return setId;
-}
-
 export function endSet(setId: string) {
   const db = getDb();
   db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), setId]);
 }
 
+/** BLETest calls this for every parsed packet */
 export function insertSample(args: {
   userId: string;
   sessionId: string;
@@ -134,15 +138,7 @@ export function insertSample(args: {
   receivedAt?: number;
 }) {
   const db = getDb();
-  const {
-    userId,
-    sessionId,
-    setId,
-    parsed,
-    serviceUuid,
-    characteristicUuid,
-    receivedAt,
-  } = args;
+  const { userId, sessionId, setId, parsed } = args;
 
   db.runSync(
     `INSERT INTO samples (
@@ -163,23 +159,15 @@ export function insertSample(args: {
       parsed.emg_right_tricep,
       parsed.emg_right_pec,
 
-      parsed.l_accx,
-      parsed.l_accy,
-      parsed.l_accz,
-      parsed.l_gyrx,
-      parsed.l_gyry,
-      parsed.l_gyrz,
+      parsed.l_accx, parsed.l_accy, parsed.l_accz,
+      parsed.l_gyrx, parsed.l_gyry, parsed.l_gyrz,
 
-      parsed.r_accx,
-      parsed.r_accy,
-      parsed.r_accz,
-      parsed.r_gyrx,
-      parsed.r_gyry,
-      parsed.r_gyrz,
+      parsed.r_accx, parsed.r_accy, parsed.r_accz,
+      parsed.r_gyrx, parsed.r_gyry, parsed.r_gyrz,
 
-      receivedAt ?? Date.now(),
-      serviceUuid ?? null,
-      characteristicUuid ?? null,
+      args.receivedAt ?? Date.now(),
+      args.serviceUuid ?? null,
+      args.characteristicUuid ?? null,
     ]
   );
 }
