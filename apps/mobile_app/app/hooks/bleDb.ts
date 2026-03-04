@@ -1,6 +1,7 @@
 // lib/bleDb.ts
 import * as SQLite from "expo-sqlite";
 
+/** Parsed BLE packet payload (what BLETest produces) */
 export type ParsedSample = {
   t_ms: number;
 
@@ -16,6 +17,47 @@ export type ParsedSample = {
   r_gyrx: number; r_gyry: number; r_gyrz: number;
 };
 
+export type SessionRow = {
+  id: string;
+  user_id: string;
+  device_id: string | null;
+  started_at: number;
+  ended_at: number | null;
+};
+
+export type SetRow = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  label: string | null;
+  started_at: number;
+  ended_at: number | null;
+};
+
+export type SampleRow = {
+  id: number;
+  session_id: string;
+  set_id: string;
+  user_id: string;
+
+  t_ms: number;
+
+  emg_left_tricep: number | null;
+  emg_left_pec: number | null;
+  emg_right_tricep: number | null;
+  emg_right_pec: number | null;
+
+  l_accx: number | null; l_accy: number | null; l_accz: number | null;
+  l_gyrx: number | null; l_gyry: number | null; l_gyrz: number | null;
+
+  r_accx: number | null; r_accy: number | null; r_accz: number | null;
+  r_gyrx: number | null; r_gyry: number | null; r_gyrz: number | null;
+
+  received_at: number;
+  service_uuid: string | null;
+  characteristic_uuid: string | null;
+};
+
 let db: SQLite.SQLiteDatabase | null = null;
 
 function getDb() {
@@ -23,6 +65,7 @@ function getDb() {
   return db;
 }
 
+/** Create tables + indexes. Call once on app start. */
 export function initBleDb() {
   const db = getDb();
   db.execSync(`
@@ -82,7 +125,7 @@ export function initBleDb() {
   `);
 }
 
-/** Called by HomePage when user clicks "New Session" */
+/** Called when user starts a session */
 export function insertSession(args: {
   sessionId: string;
   userId: string;
@@ -96,7 +139,7 @@ export function insertSession(args: {
   );
 }
 
-/** Called by HomePage when user clicks "New Set" */
+/** Called when user starts a set */
 export function insertSet(args: {
   setId: string;
   sessionId: string;
@@ -147,7 +190,7 @@ export function insertSample(args: {
       l_accx, l_accy, l_accz, l_gyrx, l_gyry, l_gyrz,
       r_accx, r_accy, r_accz, r_gyrx, r_gyry, r_gyrz,
       received_at, service_uuid, characteristic_uuid
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       sessionId,
       setId,
@@ -170,4 +213,96 @@ export function insertSample(args: {
       args.characteristicUuid ?? null,
     ]
   );
+}
+
+/* ------------------------ READ HELPERS (for Analytics/tests) ------------------------ */
+
+export function listSessions(userId: string): SessionRow[] {
+  const db = getDb();
+  return db.getAllSync<SessionRow>(
+    `SELECT * FROM sessions WHERE user_id = ? ORDER BY started_at DESC`,
+    [userId]
+  );
+}
+
+export function listSets(sessionId: string): SetRow[] {
+  const db = getDb();
+  return db.getAllSync<SetRow>(
+    `SELECT * FROM sets WHERE session_id = ? ORDER BY started_at DESC`,
+    [sessionId]
+  );
+}
+
+export function listSamplesForSet(setId: string, limit = 50): SampleRow[] {
+  const db = getDb();
+  return db.getAllSync<SampleRow>(
+    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC LIMIT ?`,
+    [setId, limit]
+  );
+}
+
+export function listSamplesForSession(sessionId: string, limit = 200): SampleRow[] {
+  const db = getDb();
+  return db.getAllSync<SampleRow>(
+    `SELECT * FROM samples WHERE session_id = ? ORDER BY t_ms ASC LIMIT ?`,
+    [sessionId, limit]
+  );
+}
+
+export function countSamplesForSet(setId: string): number {
+  const db = getDb();
+  const row = db.getFirstSync<{ c: number }>(
+    `SELECT COUNT(*) as c FROM samples WHERE set_id = ?`,
+    [setId]
+  );
+  return row?.c ?? 0;
+}
+
+/* ------------------------ TEST HELPERS (seed data) ------------------------ */
+
+export function seedTestData(userId: string) {
+  initBleDb();
+
+  const sessionId = `sess_${Date.now()}`;
+  const setId = `set_${Date.now()}`;
+
+  insertSession({ sessionId, userId, deviceId: "TEST_DEVICE" });
+  insertSet({ setId, sessionId, userId, label: "Test Set" });
+
+  for (let i = 0; i < 20; i++) {
+    insertSample({
+      userId,
+      sessionId,
+      setId,
+      parsed: {
+        t_ms: i * 50,
+
+        emg_left_tricep: 100 + i,
+        emg_left_pec: 200 + i,
+        emg_right_tricep: 300 + i,
+        emg_right_pec: 400 + i,
+
+        l_accx: 1 + i, l_accy: 2 + i, l_accz: 3 + i,
+        l_gyrx: 4 + i, l_gyry: 5 + i, l_gyrz: 6 + i,
+
+        r_accx: 7 + i, r_accy: 8 + i, r_accz: 9 + i,
+        r_gyrx: 10 + i, r_gyry: 11 + i, r_gyrz: 12 + i,
+      },
+      serviceUuid: "service_test",
+      characteristicUuid: "char_test",
+      receivedAt: Date.now(),
+    });
+  }
+
+  return { sessionId, setId };
+}
+
+/** Optional: wipe tables during debugging */
+export function clearBleDb() {
+  const db = getDb();
+  db.execSync(`
+    DELETE FROM samples;
+    DELETE FROM sets;
+    DELETE FROM sessions;
+  `);
 }

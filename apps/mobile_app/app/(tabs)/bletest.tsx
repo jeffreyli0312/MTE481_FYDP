@@ -29,7 +29,7 @@ import {
   endSession,
   endSet,
   insertSample,
-} from "../(tabs)/bleDb";
+} from "../hooks/bleDb";
 
 type ScannedDevice = {
   id: string;
