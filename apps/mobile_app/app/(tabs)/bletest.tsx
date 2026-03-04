@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import * as SQLite from "expo-sqlite";
 import {
   View,
   StyleSheet,
@@ -32,6 +34,7 @@ type DataEntry = {
   service: string;
   characteristic: string;
   bytes: number[];
+  user_id: string;
 };
 
 function getStateLabel(state: State): string {
@@ -53,6 +56,94 @@ function getStateLabel(state: State): string {
   }
 }
 
+// Setup for SQLLite below
+const db = SQLite.openDatabaseSync("ble.db");
+function initDb() {
+  db.execSync(`
+    PRAGMA journal_mode = WAL;
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      device_id TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+    CREATE TABLE IF NOT EXISTS samples (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      t_ms INTEGER NOT NULL,
+
+      emg_left_tricep INTEGER,
+      emg_left_pec INTEGER,
+      emg_right_tricep INTEGER,
+      emg_right_pec INTEGER,
+
+      l_accx INTEGER, l_accy INTEGER, l_accz INTEGER,
+      l_gyrx INTEGER, l_gyry INTEGER, l_gyrz INTEGER,
+
+      r_accx INTEGER, r_accy INTEGER, r_accz INTEGER,
+      r_gyrx INTEGER, r_gyry INTEGER, r_gyrz INTEGER,
+
+      received_at INTEGER NOT NULL,
+      service_uuid TEXT,
+      characteristic_uuid TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
+    CREATE INDEX IF NOT EXISTS idx_samples_user_time ON samples(user_id, t_ms);
+  `);
+}
+
+function readUint32LE(bytes: number[], offset: number) {
+  return (
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>> 0
+  );
+}
+
+function readInt16LE(bytes: number[], offset: number) {
+  const v = bytes[offset] | (bytes[offset + 1] << 8);
+  return v & 0x8000 ? v - 0x10000 : v;
+}
+
+function parsePacket(bytes: number[]) {
+  if (bytes.length < 36) return null;
+
+  const t_ms = readUint32LE(bytes, 0);
+
+  return {
+    t_ms,
+    emg_left_tricep: readInt16LE(bytes, 4),
+    emg_left_pec: readInt16LE(bytes, 6),
+    emg_right_tricep: readInt16LE(bytes, 8),
+    emg_right_pec: readInt16LE(bytes, 10),
+
+    l_accx: readInt16LE(bytes, 12),
+    l_accy: readInt16LE(bytes, 14),
+    l_accz: readInt16LE(bytes, 16),
+    l_gyrx: readInt16LE(bytes, 18),
+    l_gyry: readInt16LE(bytes, 20),
+    l_gyrz: readInt16LE(bytes, 22),
+
+    r_accx: readInt16LE(bytes, 24),
+    r_accy: readInt16LE(bytes, 26),
+    r_accz: readInt16LE(bytes, 28),
+    r_gyrx: readInt16LE(bytes, 30),
+    r_gyry: readInt16LE(bytes, 32),
+    r_gyrz: readInt16LE(bytes, 34),
+  };
+}
+
+function newId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export default function BLETestScreen() {
   const { colors, dark } = useAppTheme();
 
@@ -66,6 +157,22 @@ export default function BLETestScreen() {
   const [dataLog, setDataLog] = useState<DataEntry[]>([]);
   const notifSubsRef = useRef<Subscription[]>([]);
   const dataScrollRef = useRef<ScrollView>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  function startSessionRow(user_id: string, device_id?: string) {
+    const sid = newId();
+    db.runSync(
+      `INSERT INTO sessions (id, user_id, device_id, started_at) VALUES (?, ?, ?, ?)`,
+      [sid, user_id, device_id ?? null, Date.now()]
+    );
+    setSessionId(sid);
+    return sid;
+  }
+
+  function endSessionRow(sid: string) {
+    db.runSync(`UPDATE sessions SET ended_at = ? WHERE id = ?`, [Date.now(), sid]);
+  }
 
   function getManager(): BleManager {
     if (!managerRef.current) {
@@ -86,6 +193,36 @@ export default function BLETestScreen() {
       manager.destroy();
       managerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadUser() {
+      try {
+        const { data: authData, error: authErr } = await supabase.auth.getUser();
+        if (authErr) throw authErr;
+
+        const uid = authData.user?.id ?? null;
+        if (!uid) throw new Error("Not logged in");
+
+        if (!cancelled) setUserId(uid);
+      } catch (e: any) {
+        if (!cancelled) {
+          setUserId(null);
+          Alert.alert("Auth", e?.message ?? "Not logged in");
+        }
+      }
+    }
+
+    loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    initDb();
   }, []);
 
   async function requestPermissions(): Promise<boolean> {
@@ -185,7 +322,7 @@ export default function BLETestScreen() {
     }
   }
 
-  async function subscribeToDevice(d: Device) {
+  async function subscribeToDevice(d: Device, uid: string, sid: string) {
     let services;
     try {
       services = await d.services();
@@ -208,6 +345,72 @@ export default function BLETestScreen() {
           const sub = char.monitor((error: any, c: Characteristic | null) => {
             if (error || !c?.value) return;
             const bytes = decodeBase64ToBytes(c.value);
+            /* Assume bytes has format
+            
+            | Byte Index | Meaning |
+            |------------|---------|
+            | 0-3        | timestamp (uint32, ms) |
+            | 4-5        | left_tricep EMG (int16) |
+            | 6-7        | left_pec EMG (int16) |
+            | 8-9        | right_tricep EMG (int16) |
+            | 10-11      | right_pec EMG (int16) |
+            | 12-13      | left accx (int16) |
+            | 14-15      | left accy (int16) |
+            | 16-17      | left accz (int16) |
+            | 18-19      | left gyrx (int16) |
+            | 20-21      | left gyry (int16) |
+            | 22-23      | left gyrz (int16) |
+            | 24-25      | right accx (int16) |
+            | 26-27      | right accy (int16) |
+            | 28-29      | right accz (int16) |
+            | 30-31      | right gyrx (int16) |
+            | 32-33      | right gyry (int16) |
+            | 34-35      | right gyrz (int16) |
+            */
+
+            const parsed = parsePacket(bytes);
+            if (!parsed) return;
+
+            if (!uid || !sid) return;
+
+            db.runSync(
+              `INSERT INTO samples (
+    session_id, user_id, t_ms,
+    emg_left_tricep, emg_left_pec, emg_right_tricep, emg_right_pec,
+    l_accx, l_accy, l_accz, l_gyrx, l_gyry, l_gyrz,
+    r_accx, r_accy, r_accz, r_gyrx, r_gyry, r_gyrz,
+    received_at, service_uuid, characteristic_uuid
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                sid,
+                uid,
+                parsed.t_ms,
+
+                parsed.emg_left_tricep,
+                parsed.emg_left_pec,
+                parsed.emg_right_tricep,
+                parsed.emg_right_pec,
+
+                parsed.l_accx,
+                parsed.l_accy,
+                parsed.l_accz,
+                parsed.l_gyrx,
+                parsed.l_gyry,
+                parsed.l_gyrz,
+
+                parsed.r_accx,
+                parsed.r_accy,
+                parsed.r_accz,
+                parsed.r_gyrx,
+                parsed.r_gyry,
+                parsed.r_gyrz,
+
+                Date.now(),
+                service.uuid,
+                char.uuid,
+              ]
+            );
+
             console.log("BLE data:", bytes);
             const now = new Date();
             const ts =
@@ -223,6 +426,7 @@ export default function BLETestScreen() {
                   service: service.uuid.slice(0, 8),
                   characteristic: char.uuid.slice(0, 8),
                   bytes,
+                  user_id: uid,
                 },
               ];
               return next.length > 200 ? next.slice(-200) : next;
@@ -248,12 +452,24 @@ export default function BLETestScreen() {
       await d.discoverAllServicesAndCharacteristics();
       d.onDisconnected(() => {
         cleanupNotifications();
+
+        if (sessionId) {
+          endSessionRow(sessionId);
+          setSessionId(null);
+        }
+
         setConnectedDevice(null);
         Alert.alert("Disconnected", "Device disconnected.");
       });
       setConnectedDevice(d);
       setDataLog([]);
-      await subscribeToDevice(d);
+
+      if (!userId) throw new Error("Not logged in");
+
+      // start a new sqlite session for this connection
+      const sid = startSessionRow(userId, d.id);
+
+      await subscribeToDevice(d, userId, sid);
     } catch (e: any) {
       Alert.alert("Connection failed", e?.message ?? "Could not connect.");
     } finally {
@@ -270,6 +486,12 @@ export default function BLETestScreen() {
     if (!connectedDevice) return;
     try {
       cleanupNotifications();
+
+      if (sessionId) {
+        endSessionRow(sessionId);
+        setSessionId(null);
+      }
+
       await connectedDevice.cancelConnection();
       setConnectedDevice(null);
     } catch (e: any) {
