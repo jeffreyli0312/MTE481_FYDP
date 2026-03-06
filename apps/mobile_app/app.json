@@ -52,7 +52,8 @@
           "isBackgroundEnabled": false,
           "neverForLocation": false
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
