@@ -41,6 +41,7 @@ static EmgChannel emgCh[4]; // 0=L_Tri, 1=L_Pec, 2=R_Tri, 3=R_Pec
 // =================================================================================
 static ICM_20948_I2C imuLeft;
 static ICM_20948_I2C imuRight;
+static bool rightImuReady = false;  // stays false until imuRight.begin() succeeds
 
 // =================================================================================
 // HELPERS
@@ -140,14 +141,15 @@ void Sensors_Init() {
     }
     Serial.println("Left IMU OK.");
 
-    // Right IMU
-    ok = false;
-    while (!ok) {
-        imuRight.begin(Wire, IMU_RIGHT_AD0);
-        if (imuRight.status == ICM_20948_Stat_Ok) { ok = true; }
-        else { Serial.println("Right IMU init failed, retrying..."); delay(500); }
+    // Right IMU — uncomment when hardware is connected
+    imuRight.begin(Wire, IMU_RIGHT_AD0);
+    if (imuRight.status == ICM_20948_Stat_Ok) {
+        rightImuReady = true;
+        Serial.println("Right IMU OK.");
+    } else {
+        rightImuReady = false;
+        Serial.println("Right IMU NOT found — skipping.");
     }
-    Serial.println("Right IMU OK.");
 }
 
 /**
@@ -179,8 +181,8 @@ void Sensors_Collect(PacketBuffer_u &buf) {
         buf.packet.left_yaw   = ori.yaw;
     }
 
-    // 4. Right IMU
-    if (imuRight.dataReady()) {
+    // 4. Right IMU — only access if successfully initialized
+    if (rightImuReady && imuRight.dataReady()) {
         imuRight.getAGMT();
         buf.packet.right_acc_x = (int16_t)imuRight.accX();
         buf.packet.right_acc_y = (int16_t)imuRight.accY();
