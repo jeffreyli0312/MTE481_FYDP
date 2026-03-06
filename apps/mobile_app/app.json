@@ -12,10 +12,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.na3th9n.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to your device.",
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your device."
       }
     },
     "android": {
+      "package": "com.nathanxie.eva",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -41,6 +44,13 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "neverForLocation": false
         }
       ]
     ],

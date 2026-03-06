@@ -1,10 +1,13 @@
-import { View, Text, StyleSheet, Switch, Pressable } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text, Switch, Button } from "react-native-paper";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useAppTheme } from "../theme";
 
 export default function SettingsScreen() {
   const { theme, toggleTheme } = useTheme();
   const { signOut } = useAuth();
+  const { colors } = useAppTheme();
 
   const isDark = theme === "dark";
 
@@ -17,35 +20,30 @@ export default function SettingsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#14161c" : "#ffffff" }]}>
-      <Text style={[styles.title, { color: isDark ? "#ffffff" : "#000000" }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text variant="titleLarge" style={{ color: colors.onSurface }}>
         Settings
       </Text>
 
       <View style={styles.row}>
-        <Text style={[styles.label, { color: isDark ? "#e5e7eb" : "#111" }]}>
+        <Text variant="bodyLarge" style={{ color: colors.onSurface }}>
           Dark mode
         </Text>
-
-        <Switch value={isDark} onValueChange={toggleTheme} thumbColor="#60a5fa" />
+        <Switch value={isDark} onValueChange={toggleTheme} color={colors.primary} />
       </View>
 
-      <Pressable
+      <Button
+        mode="contained"
         onPress={onLogout}
-        style={{
-          marginTop: 24,
-          backgroundColor: "#ef4444",
-          paddingVertical: 12,
-          borderRadius: 12,
-          alignItems: "center",
-        }}
+        buttonColor={colors.error}
+        textColor={colors.onError}
+        style={styles.logoutBtn}
       >
-        <Text style={{ color: "white", fontWeight: "600" }}>Log out</Text>
-      </Pressable>
+        Log out
+      </Button>
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: {
@@ -53,18 +51,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 32,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "600",
-    marginBottom: 16,
-  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 12,
+    marginTop: 16,
   },
-  label: {
-    fontSize: 16,
+  logoutBtn: {
+    marginTop: 24,
+    borderRadius: 12,
   },
 });
