@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   SafeAreaView,
   View,
@@ -13,16 +13,45 @@ import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
 
-type SetRow = {
+import {
+  initBleDb,
+  listSets as listSqliteSets,
+  listSamplesForSet,
+} from "../hooks/bleDb";
+
+type SupabaseSetRow = {
   id: string;
   session_id: string;
   created_at: string;
   label?: string | null;
 };
 
+type LocalSetRow = {
+  id: string;
+  session_id: string;
+  started_at?: number | null;
+  label?: string | null;
+};
+
+type DisplaySetRow = {
+  id: string;
+  session_id: string;
+  created_at_text: string;
+  label?: string | null;
+};
+
 function formatDateOnly(iso?: string) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatDateFromMs(ms?: number | null) {
+  if (!ms) return "";
+  return new Date(ms).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -40,12 +69,17 @@ function formatDurationFromMs(ms: number) {
 export default function SessionSetsScreen() {
   const { colors, dark } = useAppTheme();
 
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, source } = useLocalSearchParams<{
+    sessionId: string;
+    source?: string;
+  }>();
+
+  const isSqlite = source === "sqlite";
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrMsg] = useState<string | null>(null);
 
-  const [sets, setSets] = useState<SetRow[]>([]);
+  const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -58,6 +92,58 @@ export default function SessionSetsScreen() {
       try {
         if (!sessionId) throw new Error("Missing sessionId");
 
+        if (isSqlite) {
+          initBleDb();
+
+          const sqliteSets = listSqliteSets(sessionId) as LocalSetRow[];
+
+          const mappedSets: DisplaySetRow[] = sqliteSets.map((st) => ({
+            id: st.id,
+            session_id: st.session_id,
+            created_at_text: formatDateFromMs(st.started_at ?? null),
+            label: st.label ?? null,
+          }));
+
+          const nextDur: Record<string, string> = {};
+
+          for (const st of sqliteSets) {
+            const samples = listSamplesForSet(st.id, 1000);
+
+            if (samples.length === 0) {
+              nextDur[st.id] = "\u2014";
+              continue;
+            }
+
+            let minReceivedAt: number | null = null;
+            let maxReceivedAt: number | null = null;
+
+            for (const smp of samples) {
+              const receivedAt = smp.received_at ?? null;
+              if (receivedAt == null) continue;
+
+              if (minReceivedAt == null || receivedAt < minReceivedAt) {
+                minReceivedAt = receivedAt;
+              }
+              if (maxReceivedAt == null || receivedAt > maxReceivedAt) {
+                maxReceivedAt = receivedAt;
+              }
+            }
+
+            nextDur[st.id] =
+              minReceivedAt != null && maxReceivedAt != null
+                ? formatDurationFromMs(maxReceivedAt - minReceivedAt)
+                : "\u2014";
+          }
+
+          if (!cancelled) {
+            setSets(mappedSets);
+            setSetDuration(nextDur);
+            setLoading(false);
+          }
+
+          return;
+        }
+
         const { data: setsData, error: setsErr } = await supabase
           .from("sets")
           .select("id, session_id, created_at, label")
@@ -66,12 +152,22 @@ export default function SessionSetsScreen() {
 
         if (setsErr) throw setsErr;
 
-        const setRows = (setsData ?? []) as SetRow[];
-        if (!cancelled) setSets(setRows);
+        const setRows = (setsData ?? []) as SupabaseSetRow[];
+
+        const mappedSets: DisplaySetRow[] = setRows.map((st) => ({
+          id: st.id,
+          session_id: st.session_id,
+          created_at_text: formatDateOnly(st.created_at),
+          label: st.label ?? null,
+        }));
 
         const setIds = setRows.map((s) => s.id);
+
         if (setIds.length === 0) {
-          if (!cancelled) setLoading(false);
+          if (!cancelled) {
+            setSets(mappedSets);
+            setLoading(false);
+          }
           return;
         }
 
@@ -104,6 +200,7 @@ export default function SessionSetsScreen() {
         }
 
         if (!cancelled) {
+          setSets(mappedSets);
           setSetDuration(nextDur);
           setLoading(false);
         }
@@ -119,14 +216,18 @@ export default function SessionSetsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, isSqlite]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderColor: colors.outline }]}>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.surface, borderColor: colors.outline },
+        ]}
+      >
         <Pressable onPress={() => router.back()} style={styles.backRow}>
           <Ionicons name="arrow-back" size={18} color={colors.onSurface} />
           <Text variant="labelLarge" style={{ color: colors.onSurface }}>
@@ -134,10 +235,16 @@ export default function SessionSetsScreen() {
           </Text>
         </Pressable>
 
-        <Text variant="headlineSmall" style={{ color: colors.onSurface, marginTop: 8 }}>
+        <Text
+          variant="headlineSmall"
+          style={{ color: colors.onSurface, marginTop: 8 }}
+        >
           Sets
         </Text>
-        <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 2 }}>
+        <Text
+          variant="bodySmall"
+          style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+        >
           Tap a set to view charts
         </Text>
       </View>
@@ -145,7 +252,10 @@ export default function SessionSetsScreen() {
       {loading ? (
         <View style={{ padding: 16, alignItems: "center" }}>
           <ActivityIndicator />
-          <Text variant="bodySmall" style={{ marginTop: 10, color: colors.onSurfaceVariant }}>
+          <Text
+            variant="bodySmall"
+            style={{ marginTop: 10, color: colors.onSurfaceVariant }}
+          >
             Loading sets...
           </Text>
         </View>
@@ -154,7 +264,10 @@ export default function SessionSetsScreen() {
           <Text variant="titleSmall" style={{ color: colors.onSurface }}>
             Couldn't load sets
           </Text>
-          <Text variant="bodySmall" style={{ marginTop: 6, color: colors.onSurfaceVariant }}>
+          <Text
+            variant="bodySmall"
+            style={{ marginTop: 6, color: colors.onSurfaceVariant }}
+          >
             {errorMsg}
           </Text>
         </View>
@@ -163,7 +276,10 @@ export default function SessionSetsScreen() {
           <Text variant="titleSmall" style={{ color: colors.onSurface }}>
             No sets found
           </Text>
-          <Text variant="bodySmall" style={{ marginTop: 6, color: colors.onSurfaceVariant }}>
+          <Text
+            variant="bodySmall"
+            style={{ marginTop: 6, color: colors.onSurfaceVariant }}
+          >
             This session has no sets in the database yet.
           </Text>
         </View>
@@ -180,32 +296,48 @@ export default function SessionSetsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/set/[setId]" as const,
-                    params: { setId: st.id },
+                    params: { setId: st.id, source: isSqlite ? "sqlite" : "supabase" },
                   })
                 }
               >
                 <Card.Content>
                   <View style={styles.topRow}>
                     <View style={styles.inlineRow}>
-                      <Text style={{ color: colors.onSurfaceVariant }}>{"\uD83D\uDCC5"}</Text>
-                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
-                        {formatDateOnly(st.created_at)}
+                      <Text style={{ color: colors.onSurfaceVariant }}>
+                        {"\uD83D\uDCC5"}
+                      </Text>
+                      <Text
+                        variant="labelMedium"
+                        style={{ color: colors.onSurfaceVariant }}
+                      >
+                        {st.created_at_text}
                       </Text>
                     </View>
 
                     <View style={styles.inlineRow}>
-                      <Text style={{ color: colors.onSurfaceVariant }}>{"\uD83D\uDD52"}</Text>
-                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                      <Text style={{ color: colors.onSurfaceVariant }}>
+                        {"\uD83D\uDD52"}
+                      </Text>
+                      <Text
+                        variant="labelMedium"
+                        style={{ color: colors.onSurfaceVariant }}
+                      >
                         {setDuration[st.id] ?? "\u2014"}
                       </Text>
                     </View>
                   </View>
 
                   <View style={{ marginTop: 10 }}>
-                    <Text variant="headlineSmall" style={{ color: colors.onSurface, fontWeight: "800" }}>
+                    <Text
+                      variant="headlineSmall"
+                      style={{ color: colors.onSurface, fontWeight: "800" }}
+                    >
                       {displayName}
                     </Text>
-                    <Text variant="bodySmall" style={{ marginTop: 2, color: colors.onSurfaceVariant }}>
+                    <Text
+                      variant="bodySmall"
+                      style={{ marginTop: 2, color: colors.onSurfaceVariant }}
+                    >
                       Tap to view analytics
                     </Text>
                   </View>
@@ -226,6 +358,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 16,
   },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   inlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 });

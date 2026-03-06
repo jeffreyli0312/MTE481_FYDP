@@ -14,6 +14,10 @@ import { LineChart, BarChart } from "react-native-chart-kit";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
+import {
+  initBleDb,
+  listSamplesForSet,
+} from "../hooks/bleDb";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -132,11 +136,14 @@ function emaSmooth(points: Point[], alpha = 0.2): Point[] {
 export default function SetAnalyticsScreen() {
   const { colors, dark } = useAppTheme();
 
-  const { setId, label, created_at } = useLocalSearchParams<{
+  const { setId, label, created_at, source } = useLocalSearchParams<{
     setId: string;
     label?: string;
     created_at?: string;
+    source?: string;
   }>();
+
+  const isSqlite = source === "sqlite";
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -152,86 +159,140 @@ export default function SetAnalyticsScreen() {
   ];
 
   useEffect(() => {
-    let cancelled = false;
+  let cancelled = false;
 
-    async function load() {
-      try {
-        setLoading(true);
-        setErr(null);
-        if (!setId) throw new Error("Missing setId");
+  async function load() {
+    try {
+      setLoading(true);
+      setErr(null);
+      if (!setId) throw new Error("Missing setId");
 
-        const emgData = await fetchAllPages<{ time: any; emg_value: any }>(
-          (from, to) =>
-            supabase
-              .from("emg_samples")
-              .select("time, emg_value")
-              .eq("set_id", setId)
-              .order("time", { ascending: true })
-              .range(from, to) as any,
-          1000
-        );
+      if (isSqlite) {
+        initBleDb();
 
-        const imuData = await fetchAllPages<{ time: any; gyrx: any }>(
-          (from, to) =>
-            supabase
-              .from("imu_samples")
-              .select("time, gyrx")
-              .eq("set_id", setId)
-              .order("time", { ascending: true })
-              .range(from, to) as any,
-          1000
-        );
+        const sqliteRows = listSamplesForSet(setId, 5000);
 
-        const emgAll: Point[] = (emgData ?? [])
-          .map((r) => ({ time: Number(r.time), value: Number(r.emg_value) }))
-          .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
-          .sort((a, b) => a.time - b.time);
-
-        const imuAll: Point[] = (imuData ?? [])
-          .map((r) => ({ time: Number(r.time), value: Number(r.gyrx) }))
-          .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
-          .sort((a, b) => a.time - b.time);
-
-        const emgMap = new Map<number, number>();
-        for (const p of emgAll) emgMap.set(p.time, p.value);
-        const imuMap = new Map<number, number>();
-        for (const p of imuAll) imuMap.set(p.time, p.value);
-
-        const times = Array.from(
-          new Set<number>([...emgAll.map((p) => p.time), ...imuAll.map((p) => p.time)])
-        ).sort((a, b) => a - b);
-
-        const rows: SampleRow[] = times.map((t) => ({
-          time: t,
-          emg: emgMap.has(t) ? emgMap.get(t)! : null,
-          gyrx: imuMap.has(t) ? imuMap.get(t)! : null,
+        const rows: SampleRow[] = sqliteRows.map((r: any) => ({
+          time: Number(r.t_ms),
+          emg:
+            Number(r.emg_left_tricep ?? 0) +
+            Number(r.emg_left_pec ?? 0) +
+            Number(r.emg_right_tricep ?? 0) +
+            Number(r.emg_right_pec ?? 0),
+          gyrx: Number(r.r_gyrx ?? r.l_gyrx ?? 0),
         }));
+
+        const emgAll: Point[] = rows
+          .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.emg))
+          .map((r) => ({ time: r.time, value: Number(r.emg) }))
+          .sort((a, b) => a.time - b.time);
+
+        const imuAll: Point[] = rows
+          .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.gyrx))
+          .map((r) => ({ time: r.time, value: Number(r.gyrx) }))
+          .sort((a, b) => a.time - b.time);
+
+        const times = Array.from(new Set(rows.map((r) => r.time))).sort(
+          (a, b) => a - b
+        );
 
         const firstTime = times[0];
         const lastTime = times[times.length - 1];
         const durMs =
-          Number.isFinite(firstTime) && Number.isFinite(lastTime) && times.length >= 2
+          Number.isFinite(firstTime) &&
+          Number.isFinite(lastTime) &&
+          times.length >= 2
             ? lastTime - firstTime
             : 0;
 
         if (!cancelled) {
+          setSamples(rows);
           setEmgSeries(emgAll);
           setImuSeries(imuAll);
-          setSamples(rows);
           setDuration(formatDurationFromMs(durMs));
         }
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ?? "Failed to load set");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [setId]);
+        return;
+      }
+
+      const emgData = await fetchAllPages<{ time: any; emg_value: any }>(
+        (from, to) =>
+          supabase
+            .from("emg_samples")
+            .select("time, emg_value")
+            .eq("set_id", setId)
+            .order("time", { ascending: true })
+            .range(from, to) as any,
+        1000
+      );
+
+      const imuData = await fetchAllPages<{ time: any; gyrx: any }>(
+        (from, to) =>
+          supabase
+            .from("imu_samples")
+            .select("time, gyrx")
+            .eq("set_id", setId)
+            .order("time", { ascending: true })
+            .range(from, to) as any,
+        1000
+      );
+
+      const emgAll: Point[] = (emgData ?? [])
+        .map((r) => ({ time: Number(r.time), value: Number(r.emg_value) }))
+        .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
+        .sort((a, b) => a.time - b.time);
+
+      const imuAll: Point[] = (imuData ?? [])
+        .map((r) => ({ time: Number(r.time), value: Number(r.gyrx) }))
+        .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
+        .sort((a, b) => a.time - b.time);
+
+      const emgMap = new Map<number, number>();
+      for (const p of emgAll) emgMap.set(p.time, p.value);
+
+      const imuMap = new Map<number, number>();
+      for (const p of imuAll) imuMap.set(p.time, p.value);
+
+      const times = Array.from(
+        new Set<number>([
+          ...emgAll.map((p) => p.time),
+          ...imuAll.map((p) => p.time),
+        ])
+      ).sort((a, b) => a - b);
+
+      const rows: SampleRow[] = times.map((t) => ({
+        time: t,
+        emg: emgMap.has(t) ? emgMap.get(t)! : null,
+        gyrx: imuMap.has(t) ? imuMap.get(t)! : null,
+      }));
+
+      const firstTime = times[0];
+      const lastTime = times[times.length - 1];
+      const durMs =
+        Number.isFinite(firstTime) &&
+        Number.isFinite(lastTime) &&
+        times.length >= 2
+          ? lastTime - firstTime
+          : 0;
+
+      if (!cancelled) {
+        setEmgSeries(emgAll);
+        setImuSeries(imuAll);
+        setSamples(rows);
+        setDuration(formatDurationFromMs(durMs));
+      }
+    } catch (e: any) {
+      if (!cancelled) setErr(e?.message ?? "Failed to load set");
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+  }
+
+  load();
+  return () => {
+    cancelled = true;
+  };
+}, [setId, isSqlite]);
 
   const baseWidth = screenWidth - 32;
   const displayMaxPoints = 2000;

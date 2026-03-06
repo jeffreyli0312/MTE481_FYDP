@@ -1,25 +1,174 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
-import { Card, Text, Button } from "react-native-paper";
+import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
 import { formatDateShort, formatMinSec } from "../utils/format";
-import type { SessionRecord } from "../types/workout";
+import { useAuth } from "../context/AuthContext";
+import {
+  initBleDb,
+  listSessions,
+  listSets,
+  listSamplesForSet,
+} from "../hooks/bleDb";
+import { supabase } from "../../lib/supabase";
+
+type SessionRecord = {
+  id: string;
+  dateISO: string;
+  durationSec: number;
+  setsCount: number;
+  avgForceN: number;
+};
 
 interface ExerciseOverviewProps {
   exerciseName: string;
-  sessions: SessionRecord[];
   onBack: () => void;
   onStartNewSession: () => void;
 }
 
+type SupabaseSessionRow = {
+  id: string;
+  created_at: string;
+  label?: string | null;
+};
+
+type SupabaseSetRow = {
+  id: string;
+  session_id: string;
+};
+
+type SupabaseImuRow = {
+  session_id?: string | null;
+  set_id?: string | null;
+  time?: number | string | null;
+  force?: number | string | null;
+  emg_left_tricep?: number | string | null;
+  emg_left_pec?: number | string | null;
+  emg_right_tricep?: number | string | null;
+  emg_right_pec?: number | string | null;
+};
+
 export default function ExerciseOverview({
   exerciseName,
-  sessions,
   onBack,
   onStartNewSession,
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
+
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+  let cancelled = false;
+
+  async function loadOverview() {
+    if (!user?.id) return;
+
+    try {
+      initBleDb();
+
+      const sqliteSessions = listSessions(user.id);
+
+      // ---------- SQLITE ----------
+      if (sqliteSessions.length > 0) {
+        const mapped: SessionRecord[] = sqliteSessions.map((session) => {
+          const sets = listSets(session.id);
+          const setsCount = sets.length;
+
+          let minReceivedAt: number | null = null;
+          let maxReceivedAt: number | null = null;
+
+          let totalForce = 0;
+          let forceCount = 0;
+
+          for (const st of sets) {
+            const samples = listSamplesForSet(st.id, 1000);
+
+            for (const smp of samples) {
+              const receivedAt = smp.received_at ?? null;
+
+              if (receivedAt != null) {
+                if (minReceivedAt == null || receivedAt < minReceivedAt) {
+                  minReceivedAt = receivedAt;
+                }
+                if (maxReceivedAt == null || receivedAt > maxReceivedAt) {
+                  maxReceivedAt = receivedAt;
+                }
+              }
+
+              const sampleForce =
+                Number(smp.emg_left_tricep ?? 0) +
+                Number(smp.emg_left_pec ?? 0) +
+                Number(smp.emg_right_tricep ?? 0) +
+                Number(smp.emg_right_pec ?? 0);
+
+              totalForce += sampleForce;
+              forceCount += 1;
+            }
+          }
+
+          const durationSec =
+            minReceivedAt != null &&
+            maxReceivedAt != null &&
+            maxReceivedAt >= minReceivedAt
+              ? Math.floor((maxReceivedAt - minReceivedAt) / 1000)
+              : 0;
+
+          const avgForceN = forceCount > 0 ? totalForce / forceCount : 0;
+
+          return {
+            id: session.id,
+            dateISO: new Date(session.started_at ?? Date.now()).toISOString(),
+            durationSec,
+            setsCount,
+            avgForceN,
+          };
+        });
+
+        mapped.sort(
+          (a, b) =>
+            new Date(b.dateISO).getTime() - new Date(a.dateISO).getTime()
+        );
+
+        if (!cancelled) setSessions(mapped);
+
+        return;
+      }
+
+      // ---------- SUPABASE ----------
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+
+      const { data: sessionRows } = await supabase
+        .from("sessions")
+        .select("id,created_at,label")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+      const mapped: SessionRecord[] = (sessionRows ?? []).map((s: any) => ({
+        id: s.id,
+        dateISO: s.created_at,
+        durationSec: 0,
+        setsCount: 0,
+        avgForceN: 0,
+      }));
+
+      if (!cancelled) setSessions(mapped);
+    } catch (e) {
+      console.error("Failed loading exercise overview", e);
+      if (!cancelled) setSessions([]);
+    }
+  }
+
+  loadOverview();
+
+  return () => {
+    cancelled = true;
+  };
+}, [user?.id]);
 
   return (
     <>
@@ -30,11 +179,17 @@ export default function ExerciseOverview({
         </Text>
       </Pressable>
 
-      <Text variant="headlineMedium" style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6 }}>
+      <Text
+        variant="headlineMedium"
+        style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6 }}
+      >
         {exerciseName}
       </Text>
-      <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
-        {sessions.length} sessions completed
+      <Text
+        variant="bodyMedium"
+        style={{ color: colors.onSurfaceVariant, marginTop: 4 }}
+      >
+        {loading ? "Loading sessions..." : `${sessions.length} sessions completed`}
       </Text>
 
       <Button
@@ -48,14 +203,40 @@ export default function ExerciseOverview({
         Start New Session
       </Button>
 
-      <Text variant="titleMedium" style={{ color: colors.onSurface, marginTop: 18 }}>
+      <Text
+        variant="titleMedium"
+        style={{ color: colors.onSurface, marginTop: 18 }}
+      >
         Previous Sessions
       </Text>
 
-      {sessions.length === 0 ? (
-        <Card style={[styles.infoCard, { borderColor: colors.infoBorder }]} mode="outlined">
-          <Card.Content style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}>
-            <Text variant="bodySmall" style={{ color: colors.infoText, textAlign: "center" }}>
+      {loading ? (
+        <View style={{ marginTop: 16 }}>
+          <ActivityIndicator />
+        </View>
+      ) : errorMsg ? (
+        <Card
+          style={[styles.infoCard, { borderColor: colors.error }]}
+          mode="outlined"
+        >
+          <Card.Content>
+            <Text variant="bodySmall" style={{ color: colors.error, textAlign: "center" }}>
+              {errorMsg}
+            </Text>
+          </Card.Content>
+        </Card>
+      ) : sessions.length === 0 ? (
+        <Card
+          style={[styles.infoCard, { borderColor: colors.infoBorder }]}
+          mode="outlined"
+        >
+          <Card.Content
+            style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}
+          >
+            <Text
+              variant="bodySmall"
+              style={{ color: colors.infoText, textAlign: "center" }}
+            >
               No sessions yet. Start your first session to begin tracking!
             </Text>
           </Card.Content>
@@ -66,14 +247,29 @@ export default function ExerciseOverview({
             <Card.Content>
               <View style={styles.sessionRow}>
                 <View style={styles.inlineRow}>
-                  <Feather name="calendar" size={14} color={colors.onSurfaceVariant} />
-                  <Text variant="labelMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                  <Feather
+                    name="calendar"
+                    size={14}
+                    color={colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurface, fontWeight: "700" }}
+                  >
                     {formatDateShort(s.dateISO)}
                   </Text>
                 </View>
+
                 <View style={styles.inlineRow}>
-                  <Feather name="clock" size={14} color={colors.onSurfaceVariant} />
-                  <Text variant="labelMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                  <Feather
+                    name="clock"
+                    size={14}
+                    color={colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurface, fontWeight: "700" }}
+                  >
                     {formatMinSec(s.durationSec)}
                   </Text>
                 </View>
@@ -81,21 +277,38 @@ export default function ExerciseOverview({
 
               <View style={styles.sessionStats}>
                 <View>
-                  <Text variant="headlineSmall" style={{ color: colors.onSurface, fontWeight: "900" }}>
+                  <Text
+                    variant="headlineSmall"
+                    style={{ color: colors.onSurface, fontWeight: "900" }}
+                  >
                     {s.setsCount}
                   </Text>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
                     Sets
                   </Text>
                 </View>
+
                 <View style={{ alignItems: "flex-end" }}>
                   <View style={styles.inlineRow}>
-                    <Feather name="trending-up" size={14} color={colors.success} />
-                    <Text variant="titleSmall" style={{ color: colors.success, fontWeight: "900" }}>
+                    <Feather
+                      name="trending-up"
+                      size={14}
+                      color={colors.success}
+                    />
+                    <Text
+                      variant="titleSmall"
+                      style={{ color: colors.success, fontWeight: "900" }}
+                    >
                       {s.avgForceN.toFixed(1)}N
                     </Text>
                   </View>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
                     Avg Force
                   </Text>
                 </View>

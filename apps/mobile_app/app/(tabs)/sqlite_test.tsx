@@ -24,49 +24,27 @@ type FlatRow = {
 };
 
 const bytes = new Uint8Array([
-  // timestamp = 1000 ms (uint32 little-endian)
   232, 3, 0, 0,
 
-  // EMG values
-  // left_tricep = 120
   120, 0,
-  // left_pec = 240
   240, 0,
-  // right_tricep = 360
   104, 1,
-  // right_pec = 480
   224, 1,
 
-  // left acc
-  // l_accx = 10
   10, 0,
-  // l_accy = 20
   20, 0,
-  // l_accz = 30
   30, 0,
 
-  // left gyr
-  // l_gyrx = 40
   40, 0,
-  // l_gyry = 50
   50, 0,
-  // l_gyrz = 60
   60, 0,
 
-  // right acc
-  // r_accx = 70
   70, 0,
-  // r_accy = 80
   80, 0,
-  // r_accz = 90
   90, 0,
 
-  // right gyr
-  // r_gyrx = 100
   100, 0,
-  // r_gyry = 110
   110, 0,
-  // r_gyrz = 120
   120, 0,
 ]);
 
@@ -75,11 +53,7 @@ function parseBleBytes(bytes: Uint8Array): ParsedSample {
     throw new Error(`Expected 36 bytes, got ${bytes.length}`);
   }
 
-  const view = new DataView(
-    bytes.buffer,
-    bytes.byteOffset,
-    bytes.byteLength
-  );
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   return {
     t_ms: view.getUint32(0, true),
@@ -108,7 +82,7 @@ function parseBleBytes(bytes: Uint8Array): ParsedSample {
 }
 
 export default function ShowDbTest() {
-  const { user } = useAuth(); // expects user.id
+  const { user } = useAuth();
 
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [setsBySession, setSetsBySession] = useState<Record<string, SetRow[]>>(
@@ -121,10 +95,37 @@ export default function ShowDbTest() {
     try {
       initBleDb();
       setStatus("DB initialized ✅");
+      if (user?.id) {
+        loadAllData();
+      }
     } catch (e: any) {
       setStatus(`DB init failed: ${e?.message ?? String(e)}`);
     }
-  }, []);
+  }, [user?.id]);
+
+  const getOrCreateSingleSessionId = () => {
+    if (!user?.id) {
+      throw new Error("No user logged in.");
+    }
+
+    const allSessions = listSessions(user.id);
+
+    if (allSessions.length > 0) {
+      return allSessions[0].id;
+    }
+
+    const now = Date.now();
+    const sessionId = `sess_${user.id}`;
+
+    insertSession({
+      sessionId,
+      userId: user.id,
+      deviceId: "FAKE_BLE_DEVICE",
+      startedAt: now,
+    });
+
+    return sessionId;
+  };
 
   const loadAllData = () => {
     if (!user?.id) {
@@ -143,7 +144,6 @@ export default function ShowDbTest() {
         nextSetsBySession[sess.id] = sets;
 
         for (const st of sets) {
-          // NOTE: If you have lots of samples, increase limit or add pagination.
           const samples = listSamplesForSet(st.id, 1000);
           for (const smp of samples) {
             flat.push({ sessionId: sess.id, setId: st.id, sample: smp });
@@ -154,7 +154,6 @@ export default function ShowDbTest() {
       setSessions(allSessions);
       setSetsBySession(nextSetsBySession);
 
-      // Sort all samples by received_at then t_ms (optional)
       flat.sort((a, b) => {
         const ra = a.sample.received_at ?? 0;
         const rb = b.sample.received_at ?? 0;
@@ -185,23 +184,19 @@ export default function ShowDbTest() {
 
     try {
       const parsed = parseBleBytes(bytes);
-
       const now = Date.now();
-      const sessionId = `sess_${now}`;
-      const setId = `set_${now}`;
 
-      insertSession({
-        sessionId,
-        userId: user.id,
-        deviceId: "FAKE_BLE_DEVICE",
-        startedAt: now,
-      });
+      const sessionId = getOrCreateSingleSessionId();
+      const existingSets = listSets(sessionId);
+
+      const setNumber = existingSets.length + 1;
+      const setId = `set_${sessionId}_${setNumber}_${now}`;
 
       insertSet({
         setId,
         sessionId,
         userId: user.id,
-        label: "Fake BLE Set",
+        label: `Fake BLE Set ${setNumber}`,
         startedAt: now,
       });
 
@@ -216,7 +211,7 @@ export default function ShowDbTest() {
       });
 
       loadAllData();
-      setStatus("Inserted fake BLE bytes into SQLite ✅");
+      setStatus(`Inserted new set into single SQLite session ✅ set=${setNumber}`);
     } catch (e: any) {
       setStatus(`Insert failed: ${e?.message ?? String(e)}`);
     }
@@ -224,7 +219,7 @@ export default function ShowDbTest() {
 
   const onClearAll = () => {
     try {
-      clearBleDb(); // deletes samples, sets, sessions
+      clearBleDb();
       setSessions([]);
       setSetsBySession({});
       setRows([]);
@@ -240,25 +235,45 @@ export default function ShowDbTest() {
         DB Testing
       </Text>
 
-      <Button title="Insert fake BLE bytes + Load ALL" onPress={onInsertFakeBleData} />
+      <Button
+        title="Add new set to single SQLite session"
+        onPress={onInsertFakeBleData}
+      />
       <View style={{ height: 10 }} />
+      <Button title="Load ALL data" onPress={loadAllData} />
       <View style={{ height: 10 }} />
       <Button title="Clear ALL data" onPress={onClearAll} />
 
       <Text style={{ marginTop: 12 }}>{status}</Text>
 
-      {/* Optional: summary */}
       <View style={{ marginTop: 16 }}>
         <Text style={{ fontWeight: "600" }}>Sessions</Text>
         {sessions.map((s) => (
-          <Text key={s.id} style={{ marginTop: 4 }}>
-            {s.id} (device: {s.device_id ?? "null"})
-          </Text>
+          <View key={s.id} style={{ marginTop: 6 }}>
+            <Text>
+              {s.id} (device: {s.device_id ?? "null"})
+            </Text>
+            <Text style={{ fontSize: 12, opacity: 0.7 }}>
+              sets: {setsBySession[s.id]?.length ?? 0}
+            </Text>
+          </View>
         ))}
       </View>
 
-      {/* All samples */}
-      {/* All samples */}
+      <View style={{ marginTop: 16 }}>
+        <Text style={{ fontWeight: "600" }}>Sets by Session</Text>
+        {Object.entries(setsBySession).map(([sessionId, sets]) => (
+          <View key={sessionId} style={{ marginTop: 8 }}>
+            <Text style={{ fontWeight: "500" }}>session: {sessionId}</Text>
+            {sets.map((st) => (
+              <Text key={st.id} style={{ marginTop: 2, marginLeft: 8 }}>
+                {st.id} | label: {st.label ?? "null"}
+              </Text>
+            ))}
+          </View>
+        ))}
+      </View>
+
       <View style={{ marginTop: 16 }}>
         <Text style={{ fontWeight: "600" }}>All Samples</Text>
 

@@ -90,7 +90,6 @@ export default function HomePageScreen() {
           ) : (
             <ExerciseOverview
               exerciseName={selectedExerciseName}
-              sessions={savedSessionsForExercise}
               onBack={handleBackToHome}
               onStartNewSession={() => setExerciseMode("session")}
             />
