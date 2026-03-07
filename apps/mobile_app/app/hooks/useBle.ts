@@ -38,6 +38,7 @@ export function useBle() {
   const dataBufferRef = useRef<Uint8Array[]>([]);
   const loggingFlagRef = useRef<boolean>(false);
   const onBatchRef = useRef<((batch: Uint8Array[]) => void) | null>(null);
+  const intentionalDisconnectRef = useRef(false);
 
   function getManager(): BleManager {
     if (!managerRef.current) {
@@ -161,7 +162,11 @@ export function useBle() {
       d.onDisconnected(() => {
         cleanupNotifications();
         setConnectedDevice(null);
-        Alert.alert("Disconnected", "EVA device disconnected.");
+        if (intentionalDisconnectRef.current) {
+          intentionalDisconnectRef.current = false;
+        } else {
+          Alert.alert("Disconnected", "EVA device disconnected unexpectedly.");
+        }
       });
       setConnectedDevice(d);
     } catch (e: any) {
@@ -174,10 +179,12 @@ export function useBle() {
   async function disconnect() {
     if (!connectedDevice) return;
     try {
+      intentionalDisconnectRef.current = true;
       cleanupNotifications();
       await connectedDevice.cancelConnection();
       setConnectedDevice(null);
     } catch (e: any) {
+      intentionalDisconnectRef.current = false;
       Alert.alert("Disconnect error", e?.message ?? "Could not disconnect.");
     }
   }
