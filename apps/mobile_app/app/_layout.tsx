@@ -5,6 +5,7 @@ import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { AuthProvider } from "./context/AuthContext";
 import { LightTheme, DarkTheme } from "./theme";
 import { initBleDb } from "./sqlite/bleDb";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 function InnerLayout() {
   const { theme } = useTheme();
@@ -23,10 +24,12 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <InnerLayout />
-      </ThemeProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <ThemeProvider>
+          <InnerLayout />
+        </ThemeProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
