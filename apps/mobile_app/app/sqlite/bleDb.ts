@@ -93,6 +93,16 @@ function getDb() {
  */
 export function initBleDb() {
   const db = getDb();
+
+  // Migrate from old schema: if samples table has l_gyrx instead of l_roll, drop it
+  const cols = db.getAllSync<{ name: string }>(
+    `PRAGMA table_info(samples)`
+  );
+  const hasOldSchema = cols.some((c) => c.name === "l_gyrx");
+  if (hasOldSchema) {
+    db.execSync(`DROP TABLE IF EXISTS samples`);
+  }
+  
   db.execSync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
