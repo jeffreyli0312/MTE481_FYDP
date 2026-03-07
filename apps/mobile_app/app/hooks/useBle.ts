@@ -107,6 +107,9 @@ export function useBle() {
           return;
         }
         if (device) {
+          const name = (device.name ?? device.localName ?? "").toLowerCase();
+          if (!name.includes("esp32_workout")) return;
+
           setDevices((prev) => {
             const i = prev.findIndex((d) => d.id === device.id);
             if (i >= 0) {
