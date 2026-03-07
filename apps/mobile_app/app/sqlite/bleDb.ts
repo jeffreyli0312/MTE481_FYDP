@@ -282,16 +282,18 @@ export function parsePacket(bytes: Uint8Array): ParsedSample | null {
   return {
     t_ms: readUint32(),
 
-    emg_left_tricep: readInt16(),
-    emg_left_pec: readInt16(),
-    emg_right_tricep: readInt16(),
-    emg_right_pec: readInt16(),
+    // Firmware scales EMG by 1000 → convert back to float
+    emg_left_tricep: readInt16() / 1000,
+    emg_left_pec: readInt16() / 1000,
+    emg_right_tricep: readInt16() / 1000,
+    emg_right_pec: readInt16() / 1000,
 
     l_accx: readInt16(), l_accy: readInt16(), l_accz: readInt16(),
-    l_roll: readInt16(), l_pitch: readInt16(), l_yaw: readInt16(),
+    // Firmware scales IMU angles (roll/pitch/yaw) by 100 → convert back to float
+    l_roll: readInt16() / 100, l_pitch: readInt16() / 100, l_yaw: readInt16() / 100,
 
     r_accx: readInt16(), r_accy: readInt16(), r_accz: readInt16(),
-    r_roll: readInt16(), r_pitch: readInt16(), r_yaw: readInt16(),
+    r_roll: readInt16() / 100, r_pitch: readInt16() / 100, r_yaw: readInt16() / 100,
   };
 }
 
