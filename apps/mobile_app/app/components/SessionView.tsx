@@ -48,7 +48,6 @@ export default function SessionView({
   const [isRecording, setIsRecording] = useState(false);
   const [setSeconds, setSetSeconds] = useState(0);
   const [setTimerRunning, setSetTimerRunning] = useState(false);
-  const [liveForceN, setLiveForceN] = useState(0);
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
 
   // Create a DB session row when the view mounts
@@ -72,17 +71,6 @@ export default function SessionView({
     return () => clearInterval(interval);
   }, [setTimerRunning]);
 
-  React.useEffect(() => {
-    if (!isRecording) return;
-    setLiveForceN(80.6);
-    const interval = setInterval(() => {
-      setLiveForceN((prev) => {
-        const jitter = (Math.random() - 0.5) * 6;
-        return Math.round(Math.max(0, prev + jitter) * 10) / 10;
-      });
-    }, 350);
-    return () => clearInterval(interval);
-  }, [isRecording]);
 
   function handleBack() {
     setIsRecording(false);
@@ -138,13 +126,12 @@ export default function SessionView({
     }
 
     const duration = Math.max(1, setSeconds);
-    const avgForce = liveForceN > 0 ? liveForceN : 80.6;
     setCompletedSets((prev) => [
       ...prev,
       {
         id: currentSetIdRef.current ?? `set-${Date.now()}`,
         durationSec: duration,
-        avgForceN: avgForce,
+        avgForceN: 0,
       },
     ]);
     currentSetIdRef.current = null;
@@ -245,32 +232,6 @@ export default function SessionView({
               >
                 Set Duration
               </Text>
-
-              <Card
-                style={[styles.forceCard, { borderColor: colors.infoBorder }]}
-                mode="outlined"
-              >
-                <Card.Content
-                  style={{
-                    alignItems: "center",
-                    backgroundColor: colors.infoBg,
-                    borderRadius: 12,
-                  }}
-                >
-                  <Text
-                    variant="labelLarge"
-                    style={{ color: colors.primary, fontWeight: "900" }}
-                  >
-                    Live Force Reading
-                  </Text>
-                  <Text
-                    variant="headlineMedium"
-                    style={{ color: colors.primary, fontWeight: "900" }}
-                  >
-                    {liveForceN.toFixed(1)}N
-                  </Text>
-                </Card.Content>
-              </Card>
 
               <Text
                 variant="labelSmall"
@@ -632,10 +593,6 @@ const styles = StyleSheet.create({
   bigCard: {
     borderRadius: 16,
     marginBottom: 18,
-  },
-  forceCard: {
-    borderRadius: 12,
-    marginBottom: 12,
   },
   actionBtn: {
     marginTop: 14,
