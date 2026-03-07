@@ -17,7 +17,7 @@ import {
   initBleDb,
   listSets as listSqliteSets,
   listSamplesForSet,
-} from "../hooks/bleDb";
+} from "../sqlite/bleDb";
 
 type SupabaseSetRow = {
   id: string;

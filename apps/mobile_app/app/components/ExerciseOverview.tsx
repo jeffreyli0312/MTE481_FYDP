@@ -10,7 +10,7 @@ import {
   listSessions,
   listSets,
   listSamplesForSet,
-} from "../hooks/bleDb";
+} from "../sqlite/bleDb";
 import { supabase } from "../../lib/supabase";
 
 type SessionRecord = {

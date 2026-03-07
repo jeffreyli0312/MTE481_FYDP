@@ -15,7 +15,7 @@ import {
   type SampleRow,
   type SessionRow,
   type SetRow,
-} from "../hooks/bleDb";
+} from "../sqlite/bleDb";
 
 type FlatRow = {
   sessionId: string;
@@ -67,17 +67,17 @@ function parseBleBytes(bytes: Uint8Array): ParsedSample {
     l_accy: view.getInt16(14, true),
     l_accz: view.getInt16(16, true),
 
-    l_gyrx: view.getInt16(18, true),
-    l_gyry: view.getInt16(20, true),
-    l_gyrz: view.getInt16(22, true),
+    l_roll: view.getInt16(18, true),
+    l_pitch: view.getInt16(20, true),
+    l_yaw: view.getInt16(22, true),
 
     r_accx: view.getInt16(24, true),
     r_accy: view.getInt16(26, true),
     r_accz: view.getInt16(28, true),
 
-    r_gyrx: view.getInt16(30, true),
-    r_gyry: view.getInt16(32, true),
-    r_gyrz: view.getInt16(34, true),
+    r_roll: view.getInt16(30, true),
+    r_pitch: view.getInt16(32, true),
+    r_yaw: view.getInt16(34, true),
   };
 }
 
@@ -297,14 +297,14 @@ export default function ShowDbTest() {
               L ACC: x={sample.l_accx} y={sample.l_accy} z={sample.l_accz}
             </Text>
             <Text>
-              L GYR: x={sample.l_gyrx} y={sample.l_gyry} z={sample.l_gyrz}
+              L RPY: r={sample.l_roll} p={sample.l_pitch} y={sample.l_yaw}
             </Text>
 
             <Text>
               R ACC: x={sample.r_accx} y={sample.r_accy} z={sample.r_accz}
             </Text>
             <Text>
-              R GYR: x={sample.r_gyrx} y={sample.r_gyry} z={sample.r_gyrz}
+              R RPY: r={sample.r_roll} p={sample.r_pitch} y={sample.r_yaw}
             </Text>
           </View>
         ))}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import {
   Card,
@@ -9,8 +9,17 @@ import {
 } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
+import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
 import { formatMMSS } from "../utils/format";
+import {
+  insertSession,
+  insertSet,
+  endSet as dbEndSet,
+  endSession as dbEndSession,
+  insertSample,
+  parsePacket,
+} from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
 interface SessionViewProps {
@@ -25,7 +34,13 @@ export default function SessionView({
   onEndSession,
 }: SessionViewProps) {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const ble = useBle();
+
+  const userId = user?.id ?? "anonymous";
+  const sessionIdRef = useRef(`sess_${Date.now()}`);
+  const currentSetIdRef = useRef<string | null>(null);
+  const [sampleCount, setSampleCount] = useState(0);
 
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [sessionTimerRunning, setSessionTimerRunning] = useState(true);
@@ -35,6 +50,15 @@ export default function SessionView({
   const [setTimerRunning, setSetTimerRunning] = useState(false);
   const [liveForceN, setLiveForceN] = useState(0);
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
+
+  // Create a DB session row when the view mounts
+  useEffect(() => {
+    insertSession({
+      sessionId: sessionIdRef.current,
+      userId,
+      deviceId: ble.connectedDevice?.id ?? undefined,
+    });
+  }, []);
 
   React.useEffect(() => {
     if (!sessionTimerRunning) return;
@@ -65,27 +89,66 @@ export default function SessionView({
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
     ble.reset();
+    dbEndSession(sessionIdRef.current);
     onBack();
   }
 
   function startRecording() {
+    const setId = `set_${Date.now()}`;
+    currentSetIdRef.current = setId;
+
+    insertSet({
+      setId,
+      sessionId: sessionIdRef.current,
+      userId,
+      label: `Set ${completedSets.length + 1}`,
+    });
+
     setIsRecording(true);
     setSetSeconds(0);
     setSetTimerRunning(true);
-    ble.startLogging();
+    setSampleCount(0);
+
+    ble.startLogging((batch) => {
+      const sid = sessionIdRef.current;
+      const setIdCurrent = currentSetIdRef.current;
+      if (!setIdCurrent) return;
+
+      let count = 0;
+      for (const bytes of batch) {
+        const parsed = parsePacket(bytes);
+        if (parsed) {
+          insertSample({ userId, sessionId: sid, setId: setIdCurrent, parsed });
+          count++;
+        }
+      }
+      if (count > 0) {
+        setSampleCount((prev) => prev + count);
+      }
+    });
   }
 
   function endRecording() {
+    ble.stopLogging();
     setIsRecording(false);
     setSetTimerRunning(false);
+
+    if (currentSetIdRef.current) {
+      dbEndSet(currentSetIdRef.current);
+    }
+
     const duration = Math.max(1, setSeconds);
     const avgForce = liveForceN > 0 ? liveForceN : 80.6;
     setCompletedSets((prev) => [
       ...prev,
-      { id: `set-${Date.now()}`, durationSec: duration, avgForceN: avgForce },
+      {
+        id: currentSetIdRef.current ?? `set-${Date.now()}`,
+        durationSec: duration,
+        avgForceN: avgForce,
+      },
     ]);
+    currentSetIdRef.current = null;
     setSetSeconds(0);
-    ble.stopLogging();
   }
 
   function handleEndSession() {
@@ -94,6 +157,8 @@ export default function SessionView({
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
     ble.reset();
+
+    dbEndSession(sessionIdRef.current);
 
     const setsCount = completedSets.length;
     const avgForce =
@@ -106,7 +171,7 @@ export default function SessionView({
           ) / 10;
 
     onEndSession({
-      id: `sess-${Date.now()}`,
+      id: sessionIdRef.current,
       dateISO: new Date().toISOString(),
       durationSec: sessionSeconds,
       setsCount,
@@ -206,6 +271,13 @@ export default function SessionView({
                   </Text>
                 </Card.Content>
               </Card>
+
+              <Text
+                variant="labelSmall"
+                style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 8 }}
+              >
+                {sampleCount} samples saved to DB
+              </Text>
 
               <Button
                 mode="contained"

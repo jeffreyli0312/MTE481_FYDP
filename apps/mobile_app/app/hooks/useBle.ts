@@ -16,12 +16,12 @@ export type ScannedDevice = {
   device: Device;
 };
 
-type DataEntry = {
-  timestamp: string;
-  service: string;
-  characteristic: string;
-  bytes: number[];
-};
+// type DataEntry = {
+//   timestamp: string;
+//   service: string;
+//   characteristic: string;
+//   bytes: number[];
+// };
 
 export function useBle() {
   // states
@@ -35,24 +35,15 @@ export function useBle() {
 
   // ref values
   const notifSubsRef = useRef<Subscription[]>([]);
-  const dataBufferRef = useRef<any[]>([]);
+  const dataBufferRef = useRef<Uint8Array[]>([]);
   const loggingFlagRef = useRef<boolean>(false);
+  const onBatchRef = useRef<((batch: Uint8Array[]) => void) | null>(null);
 
   function getManager(): BleManager {
     if (!managerRef.current) {
       managerRef.current = new BleManager();
     }
     return managerRef.current;
-  }
-
-  // decode binary code
-  function decodeBase64ToBytes(b64: string): number[] {
-    try {
-      const raw = atob(b64);
-      return Array.from(raw, (ch) => ch.charCodeAt(0));
-    } catch {
-      return [];
-    }
   }
 
   useEffect(() => {
@@ -197,10 +188,13 @@ export function useBle() {
     setDevices([]);
   }
 
-  // LOGIC FOR LOGGING
-  // listens for notifications sent from perhiperal and subscrive into database
-  function startLogging() {
+  /**
+   * Start buffering BLE data and flushing to `onBatch` every second.
+   * The callback receives an array of raw Uint8Array packets.
+   */
+  function startLogging(onBatch: (batch: Uint8Array[]) => void) {
     loggingFlagRef.current = true;
+    onBatchRef.current = onBatch;
     setIsLogging(true);
     dataBufferRef.current = [];
   }
@@ -209,13 +203,12 @@ export function useBle() {
     loggingFlagRef.current = false;
     setIsLogging(false);
 
-    // FINAL FLUSH: Save any leftover data immediately
     if (dataBufferRef.current.length > 0) {
       const finalBatch = [...dataBufferRef.current];
       dataBufferRef.current = [];
-      console.log("Saving final flush:", finalBatch.length);
-      // saveBatch(finalBatch);
+      onBatchRef.current?.(finalBatch);
     }
+    onBatchRef.current = null;
   }
 
   async function subscribeToDevice(d: Device) {
@@ -271,13 +264,12 @@ export function useBle() {
 
   useEffect(() => {
     if (!isLogging) return;
-    const interval = setInterval(async () => {
+    const interval = setInterval(() => {
       if (dataBufferRef.current.length === 0) return;
 
-      const batchToSave = [...dataBufferRef.current];
+      const batch = [...dataBufferRef.current];
       dataBufferRef.current = [];
-
-      console.log("The buffer", batchToSave);
+      onBatchRef.current?.(batch);
     }, 1000);
 
     return () => clearInterval(interval);

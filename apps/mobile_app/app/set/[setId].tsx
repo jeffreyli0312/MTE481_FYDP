@@ -17,7 +17,7 @@ import { useAppTheme } from "../theme";
 import {
   initBleDb,
   listSamplesForSet,
-} from "../hooks/bleDb";
+} from "../sqlite/bleDb";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -179,7 +179,7 @@ export default function SetAnalyticsScreen() {
             Number(r.emg_left_pec ?? 0) +
             Number(r.emg_right_tricep ?? 0) +
             Number(r.emg_right_pec ?? 0),
-          gyrx: Number(r.r_gyrx ?? r.l_gyrx ?? 0),
+          gyrx: Number(r.r_roll ?? r.l_roll ?? 0),
         }));
 
         const emgAll: Point[] = rows

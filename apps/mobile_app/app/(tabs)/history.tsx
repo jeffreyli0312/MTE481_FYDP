@@ -20,7 +20,7 @@ import {
   listSamplesForSet as listSqliteSamplesForSet,
   type SessionRow as SqliteSessionRow,
   type SetRow as SqliteSetRow,
-} from "../hooks/bleDb";
+} from "../sqlite/bleDb";
 
 const screenWidth = Dimensions.get("window").width;
 
