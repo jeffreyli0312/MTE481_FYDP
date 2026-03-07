@@ -1,6 +1,7 @@
 import { Tabs, Redirect } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
@@ -20,18 +21,36 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.onSurfaceVariant,
       }}
     >
-      <Tabs.Screen name="homepage" options={{ title: "Home Page" }} />
-      <Tabs.Screen name="history" options={{ title: "History" }} />
-      <Tabs.Screen name="bletest" options={{ href: null }} />
-      <Tabs.Screen name="sqlite_test" options={{ title: "Database" }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
-
       <Tabs.Screen
-        name="index"
+        name="homepage"
         options={{
-          href: null,
+          title: "Home",
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: "History",
+          tabBarIcon: ({ color, size }) => <Ionicons name="time" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen name="bletest" options={{ href: null }} />
+      <Tabs.Screen
+        name="sqlite_test"
+        options={{
+          title: "Database",
+          tabBarIcon: ({ color, size }) => <Ionicons name="server" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen name="index" options={{ href: null }} />
     </Tabs>
   );
 }
