@@ -1,6 +1,12 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
-import { Card, Text, Button, Badge, ActivityIndicator } from "react-native-paper";
+import {
+  Card,
+  Text,
+  Button,
+  Badge,
+  ActivityIndicator,
+} from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
 import { useBle } from "../hooks/useBle";
@@ -13,7 +19,11 @@ interface SessionViewProps {
   onEndSession: (session: SessionRecord) => void;
 }
 
-export default function SessionView({ exerciseName, onBack, onEndSession }: SessionViewProps) {
+export default function SessionView({
+  exerciseName,
+  onBack,
+  onEndSession,
+}: SessionViewProps) {
   const { colors } = useAppTheme();
   const ble = useBle();
 
@@ -62,6 +72,7 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
     setIsRecording(true);
     setSetSeconds(0);
     setSetTimerRunning(true);
+    ble.startLogging();
   }
 
   function endRecording() {
@@ -74,6 +85,7 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
       { id: `set-${Date.now()}`, durationSec: duration, avgForceN: avgForce },
     ]);
     setSetSeconds(0);
+    ble.stopLogging();
   }
 
   function handleEndSession() {
@@ -88,7 +100,9 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
       setsCount === 0
         ? 0
         : Math.round(
-            (completedSets.reduce((sum, s) => sum + s.avgForceN, 0) / setsCount) * 10
+            (completedSets.reduce((sum, s) => sum + s.avgForceN, 0) /
+              setsCount) *
+              10,
           ) / 10;
 
     onEndSession({
@@ -113,13 +127,19 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
 
         <View style={styles.inlineRow}>
           <Feather name="clock" size={16} color={colors.primary} />
-          <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+          <Text
+            variant="titleMedium"
+            style={{ color: colors.primary, fontWeight: "900" }}
+          >
             {formatMMSS(sessionSeconds)}
           </Text>
         </View>
       </View>
 
-      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "900", marginBottom: 10 }}>
+      <Text
+        variant="titleLarge"
+        style={{ color: colors.onSurface, fontWeight: "900", marginBottom: 10 }}
+      >
         {exerciseName} Session
       </Text>
       <View style={[styles.divider, { backgroundColor: colors.outline }]} />
@@ -133,28 +153,55 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
           {isRecording ? (
             <>
               <View style={{ alignItems: "center", marginBottom: 6 }}>
-                <Badge style={{ backgroundColor: colors.danger }}>Recording</Badge>
+                <Badge style={{ backgroundColor: colors.danger }}>
+                  Recording
+                </Badge>
               </View>
 
               <Text
                 variant="displaySmall"
-                style={{ color: colors.onSurface, fontWeight: "900", textAlign: "center", marginTop: 6 }}
+                style={{
+                  color: colors.onSurface,
+                  fontWeight: "900",
+                  textAlign: "center",
+                  marginTop: 6,
+                }}
               >
                 {formatMMSS(setSeconds)}
               </Text>
               <Text
                 variant="labelLarge"
-                style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 2, marginBottom: 12 }}
+                style={{
+                  color: colors.onSurfaceVariant,
+                  textAlign: "center",
+                  marginTop: 2,
+                  marginBottom: 12,
+                }}
               >
                 Set Duration
               </Text>
 
-              <Card style={[styles.forceCard, { borderColor: colors.infoBorder }]} mode="outlined">
-                <Card.Content style={{ alignItems: "center", backgroundColor: colors.infoBg, borderRadius: 12 }}>
-                  <Text variant="labelLarge" style={{ color: colors.primary, fontWeight: "900" }}>
+              <Card
+                style={[styles.forceCard, { borderColor: colors.infoBorder }]}
+                mode="outlined"
+              >
+                <Card.Content
+                  style={{
+                    alignItems: "center",
+                    backgroundColor: colors.infoBg,
+                    borderRadius: 12,
+                  }}
+                >
+                  <Text
+                    variant="labelLarge"
+                    style={{ color: colors.primary, fontWeight: "900" }}
+                  >
                     Live Force Reading
                   </Text>
-                  <Text variant="headlineMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                  <Text
+                    variant="headlineMedium"
+                    style={{ color: colors.primary, fontWeight: "900" }}
+                  >
                     {liveForceN.toFixed(1)}N
                   </Text>
                 </Card.Content>
@@ -173,23 +220,43 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
             </>
           ) : (
             <>
-              <Text variant="titleMedium" style={{ color: colors.onSurface, textAlign: "center", fontWeight: "900" }}>
+              <Text
+                variant="titleMedium"
+                style={{
+                  color: colors.onSurface,
+                  textAlign: "center",
+                  fontWeight: "900",
+                }}
+              >
                 Ready to start your next set?
               </Text>
-              <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 6 }}>
+              <Text
+                variant="bodyMedium"
+                style={{
+                  color: colors.onSurfaceVariant,
+                  textAlign: "center",
+                  marginTop: 6,
+                }}
+              >
                 Press the button below to begin recording
               </Text>
-
-              {/* Uncomment to require EVA device connection before recording:
+              {/* Uncomment to require EVA device connection before recording: */}
               {!ble.connectedDevice && (
-                <Text variant="bodySmall" style={{ color: colors.error, textAlign: "center", marginBottom: 8 }}>
+                <Text
+                  variant="bodySmall"
+                  style={{
+                    color: colors.error,
+                    textAlign: "center",
+                    marginBottom: 8,
+                  }}
+                >
                   Please connect to an EVA device to start recording.
                 </Text>
-              )} */}
+              )}
               <Button
                 mode="contained"
                 onPress={startRecording}
-                // disabled={!ble.connectedDevice}
+                disabled={!ble.connectedDevice}
                 icon="play"
                 style={styles.actionBtn}
                 buttonColor={colors.success}
@@ -204,7 +271,10 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
 
       {/* Completed Sets */}
       <View style={styles.completedHeaderRow}>
-        <Text variant="titleMedium" style={{ color: colors.onSurface, fontWeight: "900" }}>
+        <Text
+          variant="titleMedium"
+          style={{ color: colors.onSurface, fontWeight: "900" }}
+        >
           Completed Sets
         </Text>
         <Badge style={{ backgroundColor: colors.outline }}>
@@ -213,9 +283,17 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
       </View>
 
       {completedSets.length === 0 ? (
-        <Card style={[styles.infoCard, { borderColor: colors.infoBorder }]} mode="outlined">
-          <Card.Content style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}>
-            <Text variant="bodySmall" style={{ color: colors.infoText, textAlign: "center" }}>
+        <Card
+          style={[styles.infoCard, { borderColor: colors.infoBorder }]}
+          mode="outlined"
+        >
+          <Card.Content
+            style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}
+          >
+            <Text
+              variant="bodySmall"
+              style={{ color: colors.infoText, textAlign: "center" }}
+            >
               No sets completed yet. Start recording to begin!
             </Text>
           </Card.Content>
@@ -228,7 +306,10 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
                 <View
                   style={[
                     styles.setNumberCircle,
-                    { backgroundColor: colors.infoBg, borderColor: colors.infoBorder },
+                    {
+                      backgroundColor: colors.infoBg,
+                      borderColor: colors.infoBorder,
+                    },
                   ]}
                 >
                   <Text style={{ fontWeight: "900", color: colors.primary }}>
@@ -237,17 +318,34 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text variant="titleSmall" style={{ color: colors.onSurface }}>
+                  <Text
+                    variant="titleSmall"
+                    style={{ color: colors.onSurface }}
+                  >
                     Set {idx + 1}
                   </Text>
-                  <Text variant="titleSmall" style={{ color: colors.onSurface, fontWeight: "900", marginTop: 2 }}>
+                  <Text
+                    variant="titleSmall"
+                    style={{
+                      color: colors.onSurface,
+                      fontWeight: "900",
+                      marginTop: 2,
+                    }}
+                  >
                     {set.durationSec}s
                   </Text>
                 </View>
 
                 <View style={styles.inlineRow}>
-                  <Feather name="bar-chart-2" size={16} color={colors.onSurfaceVariant} />
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                  <Feather
+                    name="bar-chart-2"
+                    size={16}
+                    color={colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
                     View Stats
                   </Text>
                 </View>
@@ -263,7 +361,11 @@ export default function SessionView({ exerciseName, onBack, onEndSession }: Sess
         onPress={handleEndSession}
         disabled={completedSets.length === 0}
         style={styles.endSessionBtn}
-        textColor={completedSets.length === 0 ? colors.onSurfaceVariant : colors.onSurface}
+        textColor={
+          completedSets.length === 0
+            ? colors.onSurfaceVariant
+            : colors.onSurface
+        }
       >
         End Session
       </Button>
@@ -280,13 +382,20 @@ function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
     <Card style={styles.bigCard} mode="outlined">
       <Card.Content>
         <View style={styles.bleHeaderRow}>
-          <Text variant="titleMedium" style={{ color: colors.onSurface, fontWeight: "900" }}>
+          <Text
+            variant="titleMedium"
+            style={{ color: colors.onSurface, fontWeight: "900" }}
+          >
             Device Connection
           </Text>
           <View
             style={[
               styles.bleDot,
-              { backgroundColor: ble.connectedDevice ? colors.success : colors.error },
+              {
+                backgroundColor: ble.connectedDevice
+                  ? colors.success
+                  : colors.error,
+              },
             ]}
           />
         </View>
@@ -299,18 +408,31 @@ function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
                 {ble.connectedDevice.name || ble.connectedDevice.id}
               </Text>
             </View>
-            <Button mode="text" onPress={ble.disconnect} compact textColor={colors.error}>
+            <Button
+              mode="text"
+              onPress={ble.disconnect}
+              compact
+              textColor={colors.error}
+            >
               Disconnect
             </Button>
           </View>
         ) : (
           <>
             <Card
-              style={[styles.warningCard, { borderColor: colors.warningBorder }]}
+              style={[
+                styles.warningCard,
+                { borderColor: colors.warningBorder },
+              ]}
               mode="outlined"
             >
-              <Card.Content style={{ backgroundColor: colors.warningBg, borderRadius: 12 }}>
-                <Text variant="bodySmall" style={{ color: colors.warningText, textAlign: "center" }}>
+              <Card.Content
+                style={{ backgroundColor: colors.warningBg, borderRadius: 12 }}
+              >
+                <Text
+                  variant="bodySmall"
+                  style={{ color: colors.warningText, textAlign: "center" }}
+                >
                   Connect to an EVA device to enable sensor data recording.
                 </Text>
               </Card.Content>
@@ -331,7 +453,10 @@ function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
 
             {ble.devices.length > 0 && (
               <View style={{ marginTop: 12 }}>
-                <Text variant="labelLarge" style={{ color: colors.onSurfaceVariant, marginBottom: 8 }}>
+                <Text
+                  variant="labelLarge"
+                  style={{ color: colors.onSurfaceVariant, marginBottom: 8 }}
+                >
                   Found Devices ({ble.devices.length})
                 </Text>
                 {ble.devices.map((item) => {
@@ -339,28 +464,50 @@ function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
                   return (
                     <Card
                       key={item.id}
-                      style={[styles.bleDeviceCard, { opacity: isConnecting ? 0.7 : 1 }]}
+                      style={[
+                        styles.bleDeviceCard,
+                        { opacity: isConnecting ? 0.7 : 1 },
+                      ]}
                       mode="outlined"
-                      onPress={() => !ble.connectingId && ble.connect(item.device)}
+                      onPress={() =>
+                        !ble.connectingId && ble.connect(item.device)
+                      }
                     >
                       <Card.Content style={styles.deviceContent}>
                         <View style={styles.deviceLeft}>
-                          <Feather name="bluetooth" size={16} color={colors.onSurfaceVariant} />
+                          <Feather
+                            name="bluetooth"
+                            size={16}
+                            color={colors.onSurfaceVariant}
+                          />
                           <View>
-                            <Text variant="bodyMedium" style={{ color: colors.onSurface }}>
+                            <Text
+                              variant="bodyMedium"
+                              style={{ color: colors.onSurface }}
+                            >
                               {item.name || "Unknown"}
                             </Text>
                             {item.rssi != null && (
-                              <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                              <Text
+                                variant="labelSmall"
+                                style={{ color: colors.onSurfaceVariant }}
+                              >
                                 RSSI: {item.rssi}
                               </Text>
                             )}
                           </View>
                         </View>
                         {isConnecting ? (
-                          <ActivityIndicator size="small" color={colors.primary} />
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                          />
                         ) : (
-                          <Feather name="chevron-right" size={18} color={colors.onSurfaceVariant} />
+                          <Feather
+                            name="chevron-right"
+                            size={18}
+                            color={colors.onSurfaceVariant}
+                          />
                         )}
                       </Card.Content>
                     </Card>
@@ -372,7 +519,12 @@ function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
             {ble.devices.length === 0 && !ble.isScanning && (
               <Text
                 variant="bodySmall"
-                style={{ color: colors.onSurfaceVariant, marginTop: 8, textAlign: "center", fontStyle: "italic" }}
+                style={{
+                  color: colors.onSurfaceVariant,
+                  marginTop: 8,
+                  textAlign: "center",
+                  fontStyle: "italic",
+                }}
               >
                 Tap scan to discover nearby EVA devices
               </Text>
