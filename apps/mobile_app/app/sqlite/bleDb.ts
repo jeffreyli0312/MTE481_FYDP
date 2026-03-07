@@ -323,11 +323,29 @@ export function listSamplesForSet(setId: string, limit = 50): SampleRow[] {
   );
 }
 
+/** Fetch every sample for a set – no LIMIT. Use for graph rendering. */
+export function listAllSamplesForSet(setId: string): SampleRow[] {
+  const db = getDb();
+  return db.getAllSync<SampleRow>(
+    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC`,
+    [setId]
+  );
+}
+
 export function listSamplesForSession(sessionId: string, limit = 200): SampleRow[] {
   const db = getDb();
   return db.getAllSync<SampleRow>(
     `SELECT * FROM samples WHERE session_id = ? ORDER BY t_ms ASC LIMIT ?`,
     [sessionId, limit]
+  );
+}
+
+/** Fetch every sample for a session – no LIMIT. Use for graph rendering. */
+export function listAllSamplesForSession(sessionId: string): SampleRow[] {
+  const db = getDb();
+  return db.getAllSync<SampleRow>(
+    `SELECT * FROM samples WHERE session_id = ? ORDER BY t_ms ASC`,
+    [sessionId]
   );
 }
 

@@ -21,6 +21,7 @@ import {
   initBleDb,
   listSets as listSqliteSets,
   listSamplesForSet,
+  listAllSamplesForSet,
 } from "../sqlite/bleDb";
 
 const screenWidth = Dimensions.get("window").width;
@@ -188,7 +189,7 @@ export default function SessionSetsScreen() {
             // Build per-set overlay lines using emg_left_pec
             const allSetLines: { label: string; pts: { t: number; v: number }[] }[] = [];
             for (const st of sqliteSets) {
-              const smp = listSamplesForSet(st.id, 500);
+              const smp = listAllSamplesForSet(st.id);
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
               const pts = smp
@@ -211,7 +212,7 @@ export default function SessionSetsScreen() {
             type AxisLines = { label: string; pts: { t: number; v: number }[] }[];
             const rollLines: AxisLines = [], pitchLines: AxisLines = [], yawLines: AxisLines = [];
             for (const st of sqliteSets) {
-              const smp = listSamplesForSet(st.id, 500);
+              const smp = listAllSamplesForSet(st.id);
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
               const label = st.label ?? `Set ${rollLines.length + 1}`;
