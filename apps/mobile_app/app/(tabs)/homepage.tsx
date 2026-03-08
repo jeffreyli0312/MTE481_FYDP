@@ -113,7 +113,7 @@ export default function HomePageScreen() {
         <View style={[styles.headerContainer, { borderBottomColor: colors.outline }]}>
           <View>
             <Text variant="titleMedium" style={{ color: colors.onSurface }}>
-              Workout Tracker
+              EVA: Gym Form Correction System
             </Text>
             <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
               Welcome, {username}
