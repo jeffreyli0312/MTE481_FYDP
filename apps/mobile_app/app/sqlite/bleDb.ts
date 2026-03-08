@@ -207,6 +207,16 @@ export function initBleDb() {
     CREATE INDEX IF NOT EXISTS idx_calibrations_user_exercise
       ON calibrations(user_id, exercise_name);
   `);
+
+  // Migrations for columns added after initial schema
+  const migrate = (sql: string) => {
+    try { db.runSync(sql); } catch { /* column already exists */ }
+  };
+  migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_left_tricep REAL DEFAULT 0`);
+  migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_left_pec REAL DEFAULT 0`);
+  migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_right_tricep REAL DEFAULT 0`);
+  migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_right_pec REAL DEFAULT 0`);
+  migrate(`ALTER TABLE sets ADD COLUMN rep_count INTEGER DEFAULT 0`);
 }
 
 /* ------------------------ WRITE HELPERS ------------------------ */
