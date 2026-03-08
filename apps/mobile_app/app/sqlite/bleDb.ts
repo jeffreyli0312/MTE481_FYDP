@@ -340,11 +340,11 @@ export function listSets(sessionId: string): SetRow[] {
   );
 }
 
-export function listSamplesForSet(setId: string, limit = 50): SampleRow[] {
+export function listSamplesForSet(setId: string, limit = 50, offset = 0): SampleRow[] {
   const db = getDb();
   return db.getAllSync<SampleRow>(
-    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC LIMIT ?`,
-    [setId, limit]
+    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC LIMIT ? OFFSET ?`,
+    [setId, limit, offset]
   );
 }
 

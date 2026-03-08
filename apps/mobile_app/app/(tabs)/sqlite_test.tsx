@@ -35,10 +35,13 @@ type SampleTab = "emg" | "imu_left" | "imu_right";
 export default function DatabaseViewer() {
   const { colors } = useAppTheme();
 
+  const PAGE_SIZE = 50;
+
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sets, setSets] = useState<SetRow[]>([]);
   const [samples, setSamples] = useState<SampleRow[]>([]);
   const [sampleTotal, setSampleTotal] = useState(0);
+  const [page, setPage] = useState(0);
 
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const [selectedSet, setSelectedSet] = useState<SetRow | null>(null);
@@ -76,15 +79,20 @@ export default function DatabaseViewer() {
     setStatus(`${rows.length} set${rows.length !== 1 ? "s" : ""} in session`);
   }
 
+  function loadPage(setId: string, pageNum: number) {
+    const rows = listSamplesForSet(setId, PAGE_SIZE, pageNum * PAGE_SIZE);
+    setSamples(rows);
+    setPage(pageNum);
+  }
+
   function openSet(set: SetRow) {
     const total = countSamplesForSet(set.id);
-    const rows = listSamplesForSet(set.id, total || 50);
-    setSamples(rows);
     setSampleTotal(total);
     setSampleTab("emg");
     setSelectedSet(set);
     setViewMode("samples");
     setStatus(`${total} sample${total !== 1 ? "s" : ""} in set`);
+    loadPage(set.id, 0);
   }
 
   function goBack() {
@@ -415,6 +423,16 @@ export default function DatabaseViewer() {
                         )}
                       </DataTable.Row>
                     ))}
+
+                    <DataTable.Pagination
+                      page={page}
+                      numberOfPages={Math.ceil(sampleTotal / PAGE_SIZE)}
+                      onPageChange={(p) => {
+                        if (selectedSet) loadPage(selectedSet.id, p);
+                      }}
+                      label={`${page * PAGE_SIZE + 1}-${Math.min((page + 1) * PAGE_SIZE, sampleTotal)} of ${sampleTotal}`}
+                      showFastPaginationControls
+                    />
                   </DataTable>
                 </ScrollView>
               </>
