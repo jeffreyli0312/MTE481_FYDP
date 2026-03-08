@@ -329,14 +329,14 @@ export default function SetAnalyticsScreen() {
 
   const displayEmg = useMemo(() => {
     const smoothed = movingAverageSmooth(emgSeries, 10);
-    const ds = downsampleMinMax(smoothed, displayMaxPoints);
-    return trimLeadingBaseline(rmsEnvelope(ds, 25));
+    const env = rmsEnvelope(smoothed, 25);
+    return trimLeadingBaseline(downsampleMinMax(env, displayMaxPoints));
   }, [emgSeries]);
 
   const displayImu = useMemo(() => {
     const smoothed = movingAverageSmooth(imuSeries, 10);
-    const ds = downsampleMinMax(smoothed, displayMaxPoints);
-    return trimLeadingBaseline(emaSmooth(ds, 0.25));
+    const env = emaSmooth(smoothed, 0.25);
+    return trimLeadingBaseline(downsampleMinMax(env, displayMaxPoints));
   }, [imuSeries]);
 
   const emgChartWidth = useMemo(

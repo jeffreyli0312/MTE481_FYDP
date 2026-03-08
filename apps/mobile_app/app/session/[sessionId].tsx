@@ -279,8 +279,8 @@ export default function SessionSetsScreen() {
                   return { time: s.t_ms - t0, value: mvc > 0 ? (v / mvc) * 100 : v };
                 });
                 const smoothed = movingAverageSmooth(raw, 10);
-                const env = rmsEnvelope(downsampleMinMax(smoothed, DOWNSAMPLE_MAX), 25);
-                return trimLeadingBaseline(env).map((p) => ({ t: p.time, v: p.value }));
+                const env = rmsEnvelope(smoothed, 25);
+                return trimLeadingBaseline(downsampleMinMax(env, DOWNSAMPLE_MAX)).map((p) => ({ t: p.time, v: p.value }));
               };
               ltriLines.push({ label, pts: toEnv("emg_left_tricep")  });
               lpecLines.push({ label, pts: toEnv("emg_left_pec")     });
@@ -306,8 +306,8 @@ export default function SessionSetsScreen() {
               const toSmooth = (key: "l_roll" | "l_pitch" | "l_yaw") => {
                 const raw: Point[] = smp.map((s) => ({ time: s.t_ms - t0, value: Number((s as any)[key] ?? 0) }));
                 const smoothed = movingAverageSmooth(raw, 10);
-                const sm = emaSmooth(downsampleMinMax(smoothed, DOWNSAMPLE_MAX), 0.25);
-                return trimLeadingBaseline(sm).map((p) => ({ t: p.time, v: p.value }));
+                const sm = emaSmooth(smoothed, 0.25);
+                return trimLeadingBaseline(downsampleMinMax(sm, DOWNSAMPLE_MAX)).map((p) => ({ t: p.time, v: p.value }));
               };
               rollLines.push({  label, pts: toSmooth("l_roll")  });
               pitchLines.push({ label, pts: toSmooth("l_pitch") });
