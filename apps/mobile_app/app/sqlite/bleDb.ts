@@ -79,6 +79,21 @@ export type SampleRow = {
   characteristic_uuid: string | null;
 };
 
+export type EmgChannel =
+  | "emg_left_tricep"
+  | "emg_left_pec"
+  | "emg_right_tricep"
+  | "emg_right_pec";
+
+export type CalibrationRow = {
+  id: number;
+  user_id: string;
+  exercise_name: string;
+  emg_channel: EmgChannel;
+  mvc_value: number;
+  calibrated_at: number;
+};
+
 let db: SQLite.SQLiteDatabase | null = null;
 
 function getDb() {
@@ -163,6 +178,17 @@ export function initBleDb() {
     CREATE INDEX IF NOT EXISTS idx_samples_set_time ON samples(set_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_user_time ON samples(user_id, t_ms);
+
+    CREATE TABLE IF NOT EXISTS calibrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      exercise_name TEXT NOT NULL,
+      emg_channel TEXT NOT NULL,
+      mvc_value REAL NOT NULL,
+      calibrated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_calibrations_user_exercise
+      ON calibrations(user_id, exercise_name);
   `);
 }
 
@@ -381,6 +407,61 @@ export function countSamplesForSet(setId: string): number {
     [setId]
   );
   return row?.c ?? 0;
+}
+
+/* ------------------------ CALIBRATION HELPERS ------------------------ */
+
+/** Upsert calibration: one row per (user, exercise, channel). */
+export function saveCalibration(
+  userId: string,
+  exerciseName: string,
+  emgChannel: EmgChannel,
+  mvcValue: number,
+) {
+  const db = getDb();
+  const existing = db.getFirstSync<{ id: number }>(
+    `SELECT id FROM calibrations WHERE user_id = ? AND exercise_name = ? AND emg_channel = ?`,
+    [userId, exerciseName, emgChannel],
+  );
+  if (existing) {
+    db.runSync(
+      `UPDATE calibrations SET mvc_value = ?, calibrated_at = ? WHERE id = ?`,
+      [mvcValue, Date.now(), existing.id],
+    );
+  } else {
+    db.runSync(
+      `INSERT INTO calibrations (user_id, exercise_name, emg_channel, mvc_value, calibrated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [userId, exerciseName, emgChannel, mvcValue, Date.now()],
+    );
+  }
+}
+
+/** Get calibration for a specific channel. */
+export function getCalibration(
+  userId: string,
+  exerciseName: string,
+  emgChannel: EmgChannel,
+): CalibrationRow | null {
+  const db = getDb();
+  return db.getFirstSync<CalibrationRow>(
+    `SELECT * FROM calibrations WHERE user_id = ? AND exercise_name = ? AND emg_channel = ?`,
+    [userId, exerciseName, emgChannel],
+  );
+}
+
+/** Get the most recent calibration for any channel on this exercise. */
+export function getLatestCalibration(
+  userId: string,
+  exerciseName: string,
+): CalibrationRow | null {
+  const db = getDb();
+  return db.getFirstSync<CalibrationRow>(
+    `SELECT * FROM calibrations
+     WHERE user_id = ? AND exercise_name = ?
+     ORDER BY calibrated_at DESC LIMIT 1`,
+    [userId, exerciseName],
+  );
 }
 
 /* ------------------------ TEST HELPERS (seed data) ------------------------ */

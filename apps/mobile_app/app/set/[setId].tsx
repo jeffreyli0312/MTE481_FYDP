@@ -17,7 +17,9 @@ import { useAppTheme } from "../theme";
 import {
   initBleDb,
   listSamplesForSet,
+  getLatestCalibration,
 } from "../sqlite/bleDb";
+import { useAuth } from "../context/AuthContext";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -135,12 +137,14 @@ function emaSmooth(points: Point[], alpha = 0.2): Point[] {
 
 export default function SetAnalyticsScreen() {
   const { colors, dark } = useAppTheme();
+  const { user } = useAuth();
 
-  const { setId, label, created_at, source } = useLocalSearchParams<{
+  const { setId, label, created_at, source, mvcValue: mvcParam } = useLocalSearchParams<{
     setId: string;
     label?: string;
     created_at?: string;
     source?: string;
+    mvcValue?: string;
   }>();
 
   const isSqlite = source === "sqlite";
@@ -152,6 +156,7 @@ export default function SetAnalyticsScreen() {
   const [emgSeries, setEmgSeries] = useState<Point[]>([]);
   const [imuSeries, setImuSeries] = useState<Point[]>([]);
   const [metric, setMetric] = useState<MetricKey>("force");
+  const [mvcValue, setMvcValue] = useState(0);
 
   const metricOptions: { key: MetricKey; label: string }[] = [
     { key: "force", label: "Force" },
@@ -166,6 +171,14 @@ export default function SetAnalyticsScreen() {
       setLoading(true);
       setErr(null);
       if (!setId) throw new Error("Missing setId");
+
+      // Resolve MVC value: from param or from DB
+      let mvc = mvcParam ? parseFloat(mvcParam) : 0;
+      if (!mvc && isSqlite && user?.id) {
+        const cal = getLatestCalibration(user.id, (label as string) ?? "Bench Press");
+        if (cal) mvc = cal.mvc_value;
+      }
+      if (!cancelled) setMvcValue(mvc);
 
       if (isSqlite) {
         initBleDb();
@@ -184,7 +197,10 @@ export default function SetAnalyticsScreen() {
 
         const emgAll: Point[] = rows
           .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.emg))
-          .map((r) => ({ time: r.time, value: Number(r.emg) }))
+          .map((r) => ({
+            time: r.time,
+            value: mvc > 0 ? (Number(r.emg) / mvc) * 100 : Number(r.emg),
+          }))
           .sort((a, b) => a.time - b.time);
 
         const imuAll: Point[] = rows
@@ -319,7 +335,9 @@ export default function SetAnalyticsScreen() {
   const selectedDisplay = metric === "force" ? displayEmg : displayImu;
   const selectedChartWidth = metric === "force" ? emgChartWidth : imuChartWidth;
   const selectedSeries = useMemo(() => selectedDisplay.map((p) => p.value), [selectedDisplay]);
-  const selectedTitle = metric === "force" ? "EMG Over Time" : "Gyro X Over Time (Shoulder Flare)";
+  const selectedTitle = metric === "force"
+    ? (mvcValue > 0 ? "EMG (% MVC) Over Time" : "EMG Over Time")
+    : "Gyro X Over Time (Shoulder Flare)";
 
   const allForcesFinite = useMemo(
     () =>
@@ -509,7 +527,7 @@ export default function SetAnalyticsScreen() {
                           textAlign: "center",
                         }}
                       >
-                        {metric === "force" ? "EMG (a.u.)" : "Gyro X (deg/s)"}
+                        {metric === "force" ? (mvcValue > 0 ? "% MVC" : "EMG (a.u.)") : "Gyro X (deg/s)"}
                       </Text>
                     </View>
                     <ScrollView

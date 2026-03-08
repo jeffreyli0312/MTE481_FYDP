@@ -17,6 +17,9 @@ import {
   insertSample,
   parsePacket,
   countSamplesForSet,
+  getLatestCalibration,
+  type CalibrationRow,
+  type EmgChannel,
 } from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
@@ -48,6 +51,17 @@ export default function SessionView({
   const [setTimerRunning, setSetTimerRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
 
+  // MVC calibration + Schmitt trigger rep counter
+  const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
+  const [repCount, setRepCount] = useState(0);
+  const repCountRef = useRef(0);
+  const schmittStateRef = useRef<"low" | "high">("low");
+
+  const mvcValue = calibration?.mvc_value ?? 0;
+  const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
+  const upperThreshold = mvcValue * 0.50;
+  const lowerThreshold = mvcValue * 0.20;
+
   // Create a DB session row when the view mounts
   useEffect(() => {
     insertSession({
@@ -55,6 +69,8 @@ export default function SessionView({
       userId,
       deviceId: ble.connectedDevice?.id ?? undefined,
     });
+    const cal = getLatestCalibration(userId, exerciseName);
+    setCalibration(cal);
   }, []);
 
   React.useEffect(() => {
@@ -94,6 +110,9 @@ export default function SessionView({
     setSetSeconds(0);
     setSetTimerRunning(true);
     setSampleCount(0);
+    repCountRef.current = 0;
+    schmittStateRef.current = "low";
+    setRepCount(0);
 
     ble.startLogging((batch) => {
       const sid = sessionIdRef.current;
@@ -106,10 +125,21 @@ export default function SessionView({
         if (parsed) {
           insertSample({ userId, sessionId: sid, setId: setIdCurrent, parsed });
           count++;
+
+          if (mvcValue > 0) {
+            const emgVal = parsed[calibratedChannel] as number;
+            if (schmittStateRef.current === "low" && emgVal >= upperThreshold) {
+              schmittStateRef.current = "high";
+            } else if (schmittStateRef.current === "high" && emgVal <= lowerThreshold) {
+              schmittStateRef.current = "low";
+              repCountRef.current += 1;
+            }
+          }
         }
       }
       if (count > 0) {
         setSampleCount((prev) => prev + count);
+        if (mvcValue > 0) setRepCount(repCountRef.current);
       }
     });
   }
@@ -133,6 +163,7 @@ export default function SessionView({
         durationSec: duration,
         avgForceN: 0,
         sampleCount: samples,
+        repCount: repCountRef.current,
       },
     ]);
     currentSetIdRef.current = null;
@@ -228,6 +259,23 @@ export default function SessionView({
               >
                 Set Duration
               </Text>
+
+              {mvcValue > 0 && (
+                <View style={{ alignItems: "center", marginTop: 12 }}>
+                  <Text
+                    variant="displayMedium"
+                    style={{ color: colors.primary, fontWeight: "900" }}
+                  >
+                    {repCount}
+                  </Text>
+                  <Text
+                    variant="labelLarge"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
+                    Reps
+                  </Text>
+                </View>
+              )}
 
               <Text
                 variant="labelSmall"
@@ -337,7 +385,11 @@ export default function SessionView({
               onPress={() =>
                 router.push({
                   pathname: "/set/[setId]",
-                  params: { setId: set.id, source: "sqlite" },
+                  params: {
+                    setId: set.id,
+                    source: "sqlite",
+                    ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
+                  },
                 })
               }
             >
@@ -367,7 +419,7 @@ export default function SessionView({
                     variant="bodySmall"
                     style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
                   >
-                    {set.durationSec}s · {set.sampleCount} samples
+                    {set.durationSec}s · {set.sampleCount} samples{set.repCount > 0 ? ` · ${set.repCount} reps` : ""}
                   </Text>
                 </View>
 

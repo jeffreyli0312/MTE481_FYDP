@@ -22,7 +22,9 @@ import {
   listSets as listSqliteSets,
   listSamplesForSet,
   listAllSamplesForSet,
+  getLatestCalibration,
 } from "../sqlite/bleDb";
+import { useAuth } from "../context/AuthContext";
 
 const screenWidth = Dimensions.get("window").width;
 const CHART_POINTS = 120;
@@ -102,6 +104,7 @@ function formatDurationFromMs(ms: number) {
 
 export default function SessionSetsScreen() {
   const { colors, dark } = useAppTheme();
+  const { user } = useAuth();
 
   const { sessionId, source, title } = useLocalSearchParams<{
     sessionId: string;
@@ -113,6 +116,7 @@ export default function SessionSetsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrMsg] = useState<string | null>(null);
+  const [mvcValue, setMvcValue] = useState(0);
 
   const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
@@ -140,6 +144,13 @@ export default function SessionSetsScreen() {
 
         if (isSqlite) {
           initBleDb();
+
+          // Load MVC calibration for normalization
+          let mvc = 0;
+          if (user?.id) {
+            const cal = getLatestCalibration(user.id, (title as string) ?? "Bench Press");
+            if (cal) { mvc = cal.mvc_value; if (!cancelled) setMvcValue(mvc); }
+          }
 
           const sqliteSets = listSqliteSets(sessionId) as LocalSetRow[];
 
@@ -186,14 +197,16 @@ export default function SessionSetsScreen() {
             setSetDuration(nextDur);
             setLoading(false);
 
-            // Build per-set overlay lines using emg_left_pec
             const allSetLines: { label: string; pts: { t: number; v: number }[] }[] = [];
             for (const st of sqliteSets) {
               const smp = listAllSamplesForSet(st.id);
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
               const pts = smp
-                .map((s) => ({ t: s.t_ms - t0, v: Number(s.emg_left_pec ?? 0) }))
+                .map((s) => {
+                  const raw = Number(s.emg_left_pec ?? 0);
+                  return { t: s.t_ms - t0, v: mvc > 0 ? (raw / mvc) * 100 : raw };
+                })
                 .sort((a, b) => a.t - b.t);
               allSetLines.push({ label: st.label ?? `Set ${allSetLines.length + 1}`, pts });
             }
@@ -452,7 +465,7 @@ export default function SessionSetsScreen() {
             <Card style={styles.chartCard} mode="outlined">
               <Card.Content>
                 <Text variant="titleSmall" style={{ marginBottom: 8 }}>
-                  Left Pectoral EMG
+                  {mvcValue > 0 ? "Left Pectoral EMG (% MVC)" : "Left Pectoral EMG"}
                 </Text>
 
                 {/* Legend */}
@@ -551,7 +564,11 @@ export default function SessionSetsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/set/[setId]" as const,
-                    params: { setId: st.id, source: isSqlite ? "sqlite" : "supabase" },
+                    params: {
+                      setId: st.id,
+                      source: isSqlite ? "sqlite" : "supabase",
+                      ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
+                    },
                   })
                 }
               >
