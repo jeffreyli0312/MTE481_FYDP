@@ -68,11 +68,11 @@ export default function SessionView({
   }, [setTimerRunning]);
 
 
-  function handleBack() {
+  async function handleBack() {
     setIsRecording(false);
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
-    ble.reset();
+    await ble.reset();
     dbEndSession(sessionIdRef.current);
     onBack();
   }
@@ -134,12 +134,12 @@ export default function SessionView({
     setSetSeconds(0);
   }
 
-  function handleEndSession() {
+  async function handleEndSession() {
     if (completedSets.length === 0) return;
     setIsRecording(false);
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
-    ble.reset();
+    await ble.reset();
 
     dbEndSession(sessionIdRef.current);
 
