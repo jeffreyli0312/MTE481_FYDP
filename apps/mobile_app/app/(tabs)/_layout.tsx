@@ -1,15 +1,11 @@
-import { Tabs, Redirect } from "expo-router";
-import { useAuth } from "../context/AuthContext";
+import { Tabs } from "expo-router";
 import { useAppTheme } from "../theme";
+import { useDevMode } from "../context/DevModeContext";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
-  const { user, loading } = useAuth();
   const { colors } = useAppTheme();
-
-  if (loading) return null;
-
-  if (!user) return <Redirect href="/login" />;
+  const { devMode } = useDevMode();
 
   return (
     <Tabs
@@ -38,10 +34,10 @@ export default function TabsLayout() {
       <Tabs.Screen name="bletest" options={{ href: null }} />
       <Tabs.Screen
         name="sqlite_test"
-        options={{
+        options={devMode ? {
           title: "Database",
           tabBarIcon: ({ color, size }) => <Ionicons name="server" size={size} color={color} />,
-        }}
+        } : { href: null }}
       />
       <Tabs.Screen
         name="settings"

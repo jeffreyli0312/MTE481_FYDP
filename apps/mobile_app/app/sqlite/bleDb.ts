@@ -41,6 +41,7 @@ export type SessionRow = {
   id: string;
   user_id: string;
   device_id: string | null;
+  label: string | null;
   started_at: number;
   ended_at: number | null;
 };
@@ -78,6 +79,21 @@ export type SampleRow = {
   characteristic_uuid: string | null;
 };
 
+export type EmgChannel =
+  | "emg_left_tricep"
+  | "emg_left_pec"
+  | "emg_right_tricep"
+  | "emg_right_pec";
+
+export type CalibrationRow = {
+  id: number;
+  user_id: string;
+  exercise_name: string;
+  emg_channel: EmgChannel;
+  mvc_value: number;
+  calibrated_at: number;
+};
+
 let db: SQLite.SQLiteDatabase | null = null;
 
 function getDb() {
@@ -95,14 +111,18 @@ export function initBleDb() {
   const db = getDb();
 
   // Migrate from old schema: if samples table has l_gyrx instead of l_roll, drop it
-  const cols = db.getAllSync<{ name: string }>(
-    `PRAGMA table_info(samples)`
-  );
-  const hasOldSchema = cols.some((c) => c.name === "l_gyrx");
-  if (hasOldSchema) {
+  // Migrate: old samples schema (l_gyrx -> l_roll)
+  const sampleCols = db.getAllSync<{ name: string }>(`PRAGMA table_info(samples)`);
+  if (sampleCols.some((c) => c.name === "l_gyrx")) {
     db.execSync(`DROP TABLE IF EXISTS samples`);
   }
-  
+
+  // Migrate: add label column to sessions if missing
+  const sessionCols = db.getAllSync<{ name: string }>(`PRAGMA table_info(sessions)`);
+  if (sessionCols.length > 0 && !sessionCols.some((c) => c.name === "label")) {
+    db.execSync(`ALTER TABLE sessions ADD COLUMN label TEXT`);
+  }
+
   db.execSync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -111,6 +131,7 @@ export function initBleDb() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       device_id TEXT,
+      label TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER
     );
@@ -157,6 +178,17 @@ export function initBleDb() {
     CREATE INDEX IF NOT EXISTS idx_samples_set_time ON samples(set_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_user_time ON samples(user_id, t_ms);
+
+    CREATE TABLE IF NOT EXISTS calibrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      exercise_name TEXT NOT NULL,
+      emg_channel TEXT NOT NULL,
+      mvc_value REAL NOT NULL,
+      calibrated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_calibrations_user_exercise
+      ON calibrations(user_id, exercise_name);
   `);
 }
 
@@ -203,6 +235,18 @@ export function endSession(sessionId: string) {
 export function endSet(setId: string) {
   const db = getDb();
   db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), setId]);
+}
+
+export function renameSession(sessionId: string, label: string) {
+  const db = getDb();
+  db.runSync(`UPDATE sessions SET label = ? WHERE id = ?`, [label, sessionId]);
+}
+
+export function deleteSession(sessionId: string) {
+  const db = getDb();
+  db.runSync(`DELETE FROM samples WHERE session_id = ?`, [sessionId]);
+  db.runSync(`DELETE FROM sets WHERE session_id = ?`, [sessionId]);
+  db.runSync(`DELETE FROM sessions WHERE id = ?`, [sessionId]);
 }
 
 export function insertSample(args: {
@@ -307,6 +351,13 @@ export function listSessions(userId: string): SessionRow[] {
   );
 }
 
+export function listAllSessions(): SessionRow[] {
+  const db = getDb();
+  return db.getAllSync<SessionRow>(
+    `SELECT * FROM sessions ORDER BY started_at DESC`
+  );
+}
+
 export function listSets(sessionId: string): SetRow[] {
   const db = getDb();
   return db.getAllSync<SetRow>(
@@ -315,11 +366,11 @@ export function listSets(sessionId: string): SetRow[] {
   );
 }
 
-export function listSamplesForSet(setId: string, limit = 50): SampleRow[] {
+export function listSamplesForSet(setId: string, limit = 50, offset = 0): SampleRow[] {
   const db = getDb();
   return db.getAllSync<SampleRow>(
-    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC LIMIT ?`,
-    [setId, limit]
+    `SELECT * FROM samples WHERE set_id = ? ORDER BY t_ms ASC LIMIT ? OFFSET ?`,
+    [setId, limit, offset]
   );
 }
 
@@ -356,6 +407,61 @@ export function countSamplesForSet(setId: string): number {
     [setId]
   );
   return row?.c ?? 0;
+}
+
+/* ------------------------ CALIBRATION HELPERS ------------------------ */
+
+/** Upsert calibration: one row per (user, exercise, channel). */
+export function saveCalibration(
+  userId: string,
+  exerciseName: string,
+  emgChannel: EmgChannel,
+  mvcValue: number,
+) {
+  const db = getDb();
+  const existing = db.getFirstSync<{ id: number }>(
+    `SELECT id FROM calibrations WHERE user_id = ? AND exercise_name = ? AND emg_channel = ?`,
+    [userId, exerciseName, emgChannel],
+  );
+  if (existing) {
+    db.runSync(
+      `UPDATE calibrations SET mvc_value = ?, calibrated_at = ? WHERE id = ?`,
+      [mvcValue, Date.now(), existing.id],
+    );
+  } else {
+    db.runSync(
+      `INSERT INTO calibrations (user_id, exercise_name, emg_channel, mvc_value, calibrated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [userId, exerciseName, emgChannel, mvcValue, Date.now()],
+    );
+  }
+}
+
+/** Get calibration for a specific channel. */
+export function getCalibration(
+  userId: string,
+  exerciseName: string,
+  emgChannel: EmgChannel,
+): CalibrationRow | null {
+  const db = getDb();
+  return db.getFirstSync<CalibrationRow>(
+    `SELECT * FROM calibrations WHERE user_id = ? AND exercise_name = ? AND emg_channel = ?`,
+    [userId, exerciseName, emgChannel],
+  );
+}
+
+/** Get the most recent calibration for any channel on this exercise. */
+export function getLatestCalibration(
+  userId: string,
+  exerciseName: string,
+): CalibrationRow | null {
+  const db = getDb();
+  return db.getFirstSync<CalibrationRow>(
+    `SELECT * FROM calibrations
+     WHERE user_id = ? AND exercise_name = ?
+     ORDER BY calibrated_at DESC LIMIT 1`,
+    [userId, exerciseName],
+  );
 }
 
 /* ------------------------ TEST HELPERS (seed data) ------------------------ */

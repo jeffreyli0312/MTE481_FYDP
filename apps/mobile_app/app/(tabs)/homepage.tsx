@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
 import SessionView from "../components/SessionView";
@@ -45,7 +46,7 @@ export default function HomePageScreen() {
 
   const selectedExerciseId = selectedExercise?.id ?? "";
   const selectedExerciseName = selectedExercise?.name ?? "";
-  const savedSessionsForExercise = sessionsByExercise[selectedExerciseId] ?? [];
+  // const savedSessionsForExercise = sessionsByExercise[selectedExerciseId] ?? [];
 
   async function handleLogout() {
     try {
@@ -73,6 +74,14 @@ export default function HomePageScreen() {
       return { ...prev, [selectedExerciseId]: [session, ...existing] };
     });
     setExerciseMode("overview");
+    router.push({
+      pathname: "/session/[sessionId]",
+      params: {
+        sessionId: session.id,
+        source: "sqlite",
+        title: selectedExerciseName,
+      },
+    });
   }
 
   // ─── Exercise page (overview or active session) ───
@@ -113,7 +122,7 @@ export default function HomePageScreen() {
         <View style={[styles.headerContainer, { borderBottomColor: colors.outline }]}>
           <View>
             <Text variant="titleMedium" style={{ color: colors.onSurface }}>
-              Workout Tracker
+              EVA: Gym Form Correction System
             </Text>
             <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
               Welcome, {username}

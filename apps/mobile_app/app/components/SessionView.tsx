@@ -1,17 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
-import {
-  Card,
-  Text,
-  Button,
-  Badge,
-  ActivityIndicator,
-} from "react-native-paper";
+import { View, StyleSheet } from "react-native";
+import { Card, Text, Button, Badge } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
 import { formatMMSS } from "../utils/format";
+import BackButton from "./BackButton";
+import DeviceConnectionCard from "./DeviceConnectionCard";
 import {
   insertSession,
   insertSet,
@@ -19,6 +16,10 @@ import {
   endSession as dbEndSession,
   insertSample,
   parsePacket,
+  countSamplesForSet,
+  getLatestCalibration,
+  type CalibrationRow,
+  type EmgChannel,
 } from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
@@ -50,6 +51,17 @@ export default function SessionView({
   const [setTimerRunning, setSetTimerRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
 
+  // MVC calibration + Schmitt trigger rep counter
+  const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
+  const [repCount, setRepCount] = useState(0);
+  const repCountRef = useRef(0);
+  const schmittStateRef = useRef<"low" | "high">("low");
+
+  const mvcValue = calibration?.mvc_value ?? 0;
+  const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
+  const upperThreshold = mvcValue * 0.50;
+  const lowerThreshold = mvcValue * 0.20;
+
   // Create a DB session row when the view mounts
   useEffect(() => {
     insertSession({
@@ -57,6 +69,8 @@ export default function SessionView({
       userId,
       deviceId: ble.connectedDevice?.id ?? undefined,
     });
+    const cal = getLatestCalibration(userId, exerciseName);
+    setCalibration(cal);
   }, []);
 
   React.useEffect(() => {
@@ -72,11 +86,11 @@ export default function SessionView({
   }, [setTimerRunning]);
 
 
-  function handleBack() {
+  async function handleBack() {
     setIsRecording(false);
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
-    ble.reset();
+    await ble.reset();
     dbEndSession(sessionIdRef.current);
     onBack();
   }
@@ -96,6 +110,9 @@ export default function SessionView({
     setSetSeconds(0);
     setSetTimerRunning(true);
     setSampleCount(0);
+    repCountRef.current = 0;
+    schmittStateRef.current = "low";
+    setRepCount(0);
 
     ble.startLogging((batch) => {
       const sid = sessionIdRef.current;
@@ -108,10 +125,21 @@ export default function SessionView({
         if (parsed) {
           insertSample({ userId, sessionId: sid, setId: setIdCurrent, parsed });
           count++;
+
+          if (mvcValue > 0) {
+            const emgVal = parsed[calibratedChannel] as number;
+            if (schmittStateRef.current === "low" && emgVal >= upperThreshold) {
+              schmittStateRef.current = "high";
+            } else if (schmittStateRef.current === "high" && emgVal <= lowerThreshold) {
+              schmittStateRef.current = "low";
+              repCountRef.current += 1;
+            }
+          }
         }
       }
       if (count > 0) {
         setSampleCount((prev) => prev + count);
+        if (mvcValue > 0) setRepCount(repCountRef.current);
       }
     });
   }
@@ -126,24 +154,28 @@ export default function SessionView({
     }
 
     const duration = Math.max(1, setSeconds);
+    const setId = currentSetIdRef.current ?? `set-${Date.now()}`;
+    const samples = countSamplesForSet(setId);
     setCompletedSets((prev) => [
       ...prev,
       {
-        id: currentSetIdRef.current ?? `set-${Date.now()}`,
+        id: setId,
         durationSec: duration,
         avgForceN: 0,
+        sampleCount: samples,
+        repCount: repCountRef.current,
       },
     ]);
     currentSetIdRef.current = null;
     setSetSeconds(0);
   }
 
-  function handleEndSession() {
+  async function handleEndSession() {
     if (completedSets.length === 0) return;
     setIsRecording(false);
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
-    ble.reset();
+    await ble.reset();
 
     dbEndSession(sessionIdRef.current);
 
@@ -170,12 +202,7 @@ export default function SessionView({
     <>
       {/* Header */}
       <View style={styles.sessionTopRow}>
-        <Pressable onPress={handleBack} style={styles.backRow}>
-          <Feather name="arrow-left" size={18} color={colors.onSurface} />
-          <Text variant="labelLarge" style={{ color: colors.onSurface }}>
-            Back
-          </Text>
-        </Pressable>
+        <BackButton onPress={handleBack} />
 
         <View style={styles.inlineRow}>
           <Feather name="clock" size={16} color={colors.primary} />
@@ -232,6 +259,23 @@ export default function SessionView({
               >
                 Set Duration
               </Text>
+
+              {mvcValue > 0 && (
+                <View style={{ alignItems: "center", marginTop: 12 }}>
+                  <Text
+                    variant="displayMedium"
+                    style={{ color: colors.primary, fontWeight: "900" }}
+                  >
+                    {repCount}
+                  </Text>
+                  <Text
+                    variant="labelLarge"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
+                    Reps
+                  </Text>
+                </View>
+              )}
 
               <Text
                 variant="labelSmall"
@@ -334,7 +378,21 @@ export default function SessionView({
       ) : (
         <View style={{ gap: 10 }}>
           {completedSets.map((set, idx) => (
-            <Card key={set.id} style={styles.setRowCard} mode="outlined">
+            <Card
+              key={set.id}
+              style={styles.setRowCard}
+              mode="outlined"
+              onPress={() =>
+                router.push({
+                  pathname: "/set/[setId]",
+                  params: {
+                    setId: set.id,
+                    source: "sqlite",
+                    ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
+                  },
+                })
+              }
+            >
               <Card.Content style={styles.setRowContent}>
                 <View
                   style={[
@@ -358,14 +416,10 @@ export default function SessionView({
                     Set {idx + 1}
                   </Text>
                   <Text
-                    variant="titleSmall"
-                    style={{
-                      color: colors.onSurface,
-                      fontWeight: "900",
-                      marginTop: 2,
-                    }}
+                    variant="bodySmall"
+                    style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
                   >
-                    {set.durationSec}s
+                    {set.durationSec}s · {set.sampleCount} samples{set.repCount > 0 ? ` · ${set.repCount} reps` : ""}
                   </Text>
                 </View>
 
@@ -373,14 +427,13 @@ export default function SessionView({
                   <Feather
                     name="bar-chart-2"
                     size={16}
+                    color={colors.primary}
+                  />
+                  <Feather
+                    name="chevron-right"
+                    size={16}
                     color={colors.onSurfaceVariant}
                   />
-                  <Text
-                    variant="labelMedium"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    View Stats
-                  </Text>
                 </View>
               </Card.Content>
             </Card>
@@ -406,180 +459,12 @@ export default function SessionView({
   );
 }
 
-// ─── Device Connection sub-component ───
-
-function DeviceConnectionCard({ ble }: { ble: ReturnType<typeof useBle> }) {
-  const { colors } = useAppTheme();
-
-  return (
-    <Card style={styles.bigCard} mode="outlined">
-      <Card.Content>
-        <View style={styles.bleHeaderRow}>
-          <Text
-            variant="titleMedium"
-            style={{ color: colors.onSurface, fontWeight: "900" }}
-          >
-            Device Connection
-          </Text>
-          <View
-            style={[
-              styles.bleDot,
-              {
-                backgroundColor: ble.connectedDevice
-                  ? colors.success
-                  : colors.error,
-              },
-            ]}
-          />
-        </View>
-
-        {ble.connectedDevice ? (
-          <View style={styles.connectedRow}>
-            <View style={styles.inlineRow}>
-              <Feather name="bluetooth" size={16} color={colors.success} />
-              <Text variant="bodyMedium" style={{ color: colors.success }}>
-                {ble.connectedDevice.name || ble.connectedDevice.id}
-              </Text>
-            </View>
-            <Button
-              mode="text"
-              onPress={ble.disconnect}
-              compact
-              textColor={colors.error}
-            >
-              Disconnect
-            </Button>
-          </View>
-        ) : (
-          <>
-            <Card
-              style={[
-                styles.warningCard,
-                { borderColor: colors.warningBorder },
-              ]}
-              mode="outlined"
-            >
-              <Card.Content
-                style={{ backgroundColor: colors.warningBg, borderRadius: 12 }}
-              >
-                <Text
-                  variant="bodySmall"
-                  style={{ color: colors.warningText, textAlign: "center" }}
-                >
-                  Connect to an EVA device to enable sensor data recording.
-                </Text>
-              </Card.Content>
-            </Card>
-
-            <Button
-              mode="contained"
-              onPress={ble.isScanning ? ble.stopScan : ble.startScan}
-              disabled={!ble.isReady || !!ble.connectingId}
-              icon={ble.isScanning ? undefined : "magnify"}
-              loading={ble.isScanning}
-              style={styles.scanBtn}
-              buttonColor={colors.primary}
-              textColor={colors.onPrimary}
-            >
-              {ble.isScanning ? "Stop Scan" : "Scan for Devices"}
-            </Button>
-
-            {ble.devices.length > 0 && (
-              <View style={{ marginTop: 12 }}>
-                <Text
-                  variant="labelLarge"
-                  style={{ color: colors.onSurfaceVariant, marginBottom: 8 }}
-                >
-                  Found Devices ({ble.devices.length})
-                </Text>
-                {ble.devices.map((item) => {
-                  const isConnecting = ble.connectingId === item.id;
-                  return (
-                    <Card
-                      key={item.id}
-                      style={[
-                        styles.bleDeviceCard,
-                        { opacity: isConnecting ? 0.7 : 1 },
-                      ]}
-                      mode="outlined"
-                      onPress={() =>
-                        !ble.connectingId && ble.connect(item.device)
-                      }
-                    >
-                      <Card.Content style={styles.deviceContent}>
-                        <View style={styles.deviceLeft}>
-                          <Feather
-                            name="bluetooth"
-                            size={16}
-                            color={colors.onSurfaceVariant}
-                          />
-                          <View>
-                            <Text
-                              variant="bodyMedium"
-                              style={{ color: colors.onSurface }}
-                            >
-                              {item.name || "Unknown"}
-                            </Text>
-                            {item.rssi != null && (
-                              <Text
-                                variant="labelSmall"
-                                style={{ color: colors.onSurfaceVariant }}
-                              >
-                                RSSI: {item.rssi}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                        {isConnecting ? (
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.primary}
-                          />
-                        ) : (
-                          <Feather
-                            name="chevron-right"
-                            size={18}
-                            color={colors.onSurfaceVariant}
-                          />
-                        )}
-                      </Card.Content>
-                    </Card>
-                  );
-                })}
-              </View>
-            )}
-
-            {ble.devices.length === 0 && !ble.isScanning && (
-              <Text
-                variant="bodySmall"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  marginTop: 8,
-                  textAlign: "center",
-                  fontStyle: "italic",
-                }}
-              >
-                Tap scan to discover nearby EVA devices
-              </Text>
-            )}
-          </>
-        )}
-      </Card.Content>
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
   sessionTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
-  },
-  backRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
   },
   inlineRow: {
     flexDirection: "row",
@@ -626,43 +511,5 @@ const styles = StyleSheet.create({
   endSessionBtn: {
     marginTop: 14,
     borderRadius: 10,
-  },
-  bleHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  bleDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  connectedRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  warningCard: {
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  scanBtn: {
-    borderRadius: 10,
-  },
-  bleDeviceCard: {
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  deviceContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  deviceLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
   },
 });

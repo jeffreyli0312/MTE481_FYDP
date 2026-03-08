@@ -181,20 +181,19 @@ export function useBle() {
 
   async function disconnect() {
     if (!connectedDevice) return;
+    intentionalDisconnectRef.current = true;
+    cleanupNotifications();
     try {
-      intentionalDisconnectRef.current = true;
-      cleanupNotifications();
       await connectedDevice.cancelConnection();
-      setConnectedDevice(null);
-    } catch (e: any) {
-      intentionalDisconnectRef.current = false;
-      Alert.alert("Disconnect error", e?.message ?? "Could not disconnect.");
+    } catch {
+      // Swallow — cancelConnection often rejects during teardown
     }
+    setConnectedDevice(null);
   }
 
-  function reset() {
+  async function reset() {
     stopScan();
-    disconnect();
+    await disconnect();
     setDevices([]);
   }
 

@@ -22,3 +22,20 @@ export function formatDateShort(dateISO: string) {
     year: "numeric",
   });
 }
+
+export function formatDateFromMs(ms: number | null | undefined) {
+  if (ms == null) return "\u2014";
+  return new Date(ms).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function formatDurationFromMs(ms: number) {
+  if (!Number.isFinite(ms) || ms < 0) return "\u2014";
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s}s`;
+}
