@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router } from "expo-router";
-import { LineChart, BarChart } from "react-native-chart-kit";
+import { LineChart } from "react-native-chart-kit";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -26,17 +26,23 @@ const screenWidth = Dimensions.get("window").width;
 
 type SampleRow = {
   time: number;
-  emg?: number | null;
+  emg_left_tricep?: number | null;
+  emg_left_pec?: number | null;
+  emg_right_tricep?: number | null;
+  emg_right_pec?: number | null;
   gyrx?: number | null;
 };
 
 type Point = { time: number; value: number };
 
-type SetData = {
-  name: string;
-  avgForce: number;
-  maxForce: number;
-};
+type EmgChannelKey = "emg_left_tricep" | "emg_left_pec" | "emg_right_tricep" | "emg_right_pec";
+
+const EMG_CHANNELS: { key: EmgChannelKey; label: string }[] = [
+  { key: "emg_left_tricep", label: "L Tricep" },
+  { key: "emg_left_pec", label: "L Pec" },
+  { key: "emg_right_tricep", label: "R Tricep" },
+  { key: "emg_right_pec", label: "R Pec" },
+];
 
 type MetricKey = "force" | "yaw";
 
@@ -167,13 +173,16 @@ export default function SetAnalyticsScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [samples, setSamples] = useState<SampleRow[]>([]);
   const [duration, setDuration] = useState("0m 0s");
-  const [emgSeries, setEmgSeries] = useState<Point[]>([]);
+  const [emgChannelSeries, setEmgChannelSeries] = useState<Record<EmgChannelKey, Point[]>>({
+    emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [],
+  });
   const [imuSeries, setImuSeries] = useState<Point[]>([]);
   const [metric, setMetric] = useState<MetricKey>("force");
+  const [selectedEmgChannel, setSelectedEmgChannel] = useState<EmgChannelKey>("emg_left_pec");
   const [mvcValue, setMvcValue] = useState(0);
 
   const metricOptions: { key: MetricKey; label: string }[] = [
-    { key: "force", label: "Force" },
+    { key: "force", label: "EMG" },
     { key: "yaw", label: "Yaw" },
   ];
 
@@ -201,21 +210,28 @@ export default function SetAnalyticsScreen() {
 
         const rows: SampleRow[] = sqliteRows.map((r: any) => ({
           time: Number(r.t_ms),
-          emg:
-            Number(r.emg_left_tricep ?? 0) +
-            Number(r.emg_left_pec ?? 0) +
-            Number(r.emg_right_tricep ?? 0) +
-            Number(r.emg_right_pec ?? 0),
+          emg_left_tricep: Number(r.emg_left_tricep ?? 0),
+          emg_left_pec: Number(r.emg_left_pec ?? 0),
+          emg_right_tricep: Number(r.emg_right_tricep ?? 0),
+          emg_right_pec: Number(r.emg_right_pec ?? 0),
           gyrx: Number(r.r_roll ?? r.l_roll ?? 0),
         }));
 
-        const emgAll: Point[] = rows
-          .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.emg))
-          .map((r) => ({
-            time: r.time,
-            value: mvc > 0 ? (Number(r.emg) / mvc) * 100 : Number(r.emg),
-          }))
-          .sort((a, b) => a.time - b.time);
+        const buildChannel = (key: EmgChannelKey): Point[] =>
+          rows
+            .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
+            .map((r) => {
+              const v = Number(r[key]);
+              return { time: r.time, value: mvc > 0 ? (v / mvc) * 100 : v };
+            })
+            .sort((a, b) => a.time - b.time);
+
+        const perChannel: Record<EmgChannelKey, Point[]> = {
+          emg_left_tricep: buildChannel("emg_left_tricep"),
+          emg_left_pec: buildChannel("emg_left_pec"),
+          emg_right_tricep: buildChannel("emg_right_tricep"),
+          emg_right_pec: buildChannel("emg_right_pec"),
+        };
 
         const imuAll: Point[] = rows
           .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.gyrx))
@@ -237,7 +253,7 @@ export default function SetAnalyticsScreen() {
 
         if (!cancelled) {
           setSamples(rows);
-          setEmgSeries(emgAll);
+          setEmgChannelSeries(perChannel);
           setImuSeries(imuAll);
           setDuration(formatDurationFromMs(durMs));
         }
@@ -290,11 +306,24 @@ export default function SetAnalyticsScreen() {
         ])
       ).sort((a, b) => a - b);
 
-      const rows: SampleRow[] = times.map((t) => ({
-        time: t,
-        emg: emgMap.has(t) ? emgMap.get(t)! : null,
-        gyrx: imuMap.has(t) ? imuMap.get(t)! : null,
-      }));
+      const rows: SampleRow[] = times.map((t) => {
+        const emgVal = emgMap.has(t) ? emgMap.get(t)! : null;
+        return {
+          time: t,
+          emg_left_tricep: emgVal,
+          emg_left_pec: emgVal,
+          emg_right_tricep: emgVal,
+          emg_right_pec: emgVal,
+          gyrx: imuMap.has(t) ? imuMap.get(t)! : null,
+        };
+      });
+
+      const perChannel: Record<EmgChannelKey, Point[]> = {
+        emg_left_tricep: emgAll,
+        emg_left_pec: emgAll,
+        emg_right_tricep: emgAll,
+        emg_right_pec: emgAll,
+      };
 
       const firstTime = times[0];
       const lastTime = times[times.length - 1];
@@ -306,7 +335,7 @@ export default function SetAnalyticsScreen() {
           : 0;
 
       if (!cancelled) {
-        setEmgSeries(emgAll);
+        setEmgChannelSeries(perChannel);
         setImuSeries(imuAll);
         setSamples(rows);
         setDuration(formatDurationFromMs(durMs));
@@ -326,6 +355,8 @@ export default function SetAnalyticsScreen() {
 
   const baseWidth = screenWidth - 32;
   const displayMaxPoints = 2000;
+
+  const emgSeries = emgChannelSeries[selectedEmgChannel];
 
   const displayEmg = useMemo(() => {
     const smoothed = movingAverageSmooth(emgSeries, 10);
@@ -351,53 +382,37 @@ export default function SetAnalyticsScreen() {
   const selectedDisplay = metric === "force" ? displayEmg : displayImu;
   const selectedChartWidth = metric === "force" ? emgChartWidth : imuChartWidth;
   const selectedSeries = useMemo(() => selectedDisplay.map((p) => p.value), [selectedDisplay]);
+  const emgChannelLabel = EMG_CHANNELS.find((c) => c.key === selectedEmgChannel)?.label ?? "";
   const selectedTitle = metric === "force"
-    ? (mvcValue > 0 ? "EMG (% MVC) Over Time" : "EMG Over Time")
+    ? `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`
     : "Gyro X Over Time (Shoulder Flare)";
 
-  const allForcesFinite = useMemo(
-    () =>
-      samples
-        .map((s) => s.emg)
-        .filter((v): v is number => typeof v === "number" && Number.isFinite(v)),
-    [samples]
+  const channelValues = useMemo(
+    () => emgSeries.map((p) => p.value).filter((v) => Number.isFinite(v)),
+    [emgSeries]
   );
 
-  const avgForce = useMemo(() => {
-    if (!allForcesFinite.length) return 0;
-    return allForcesFinite.reduce((a, b) => a + b, 0) / allForcesFinite.length;
-  }, [allForcesFinite]);
+  const avgEmg = useMemo(() => {
+    if (!channelValues.length) return 0;
+    return channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
+  }, [channelValues]);
 
-  const maxForce = useMemo(
-    () => (allForcesFinite.length ? Math.max(...allForcesFinite) : 0),
-    [allForcesFinite]
+  const maxEmg = useMemo(
+    () => (channelValues.length ? Math.max(...channelValues) : 0),
+    [channelValues]
   );
 
   const consistency = useMemo(() => {
-    if (allForcesFinite.length < 2) return 0;
-    const range = Math.max(...allForcesFinite) - Math.min(...allForcesFinite);
-    const score = 100 - range / 2;
-    return Math.max(0, Math.min(100, Math.round(score)));
-  }, [allForcesFinite]);
+    if (channelValues.length < 2) return 0;
+    const mean = channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
+    if (mean === 0) return 0;
+    const variance = channelValues.reduce((s, v) => s + (v - mean) ** 2, 0) / channelValues.length;
+    const cv = (Math.sqrt(variance) / mean) * 100;
+    const score = Math.max(0, Math.min(100, Math.round(100 - cv)));
+    return score;
+  }, [channelValues]);
 
   const consistencyLabel = consistency > 80 ? "Excellent" : consistency > 60 ? "Good" : "Needs Work";
-
-  const sets: SetData[] = useMemo(() => {
-    const a = avgForce;
-    const m = maxForce;
-    return [
-      { name: "Set 1", avgForce: a * 0.9, maxForce: m },
-      { name: "Set 2", avgForce: a, maxForce: m * 0.95 },
-    ];
-  }, [avgForce, maxForce]);
-
-  const barData = useMemo(
-    () => ({
-      labels: sets.map((s) => s.name),
-      datasets: [{ data: sets.map((s) => (Number.isFinite(s.avgForce) ? s.avgForce : 0)) }],
-    }),
-    [sets]
-  );
 
   const chartConfig = useMemo(
     () => ({
@@ -491,12 +506,12 @@ export default function SetAnalyticsScreen() {
         {/* Overview Cards */}
         <View style={styles.statsGrid}>
           <StatCard title="Duration" value={duration} />
-          <StatCard title="Total Sets" value="1" />
-          <StatCard title="Avg Force" value={avgForce.toFixed(1)} unit="N" />
-          <StatCard title="Max Force" value={maxForce.toFixed(1)} unit="N" />
+          <StatCard title="Channel" value={emgChannelLabel} />
+          <StatCard title="Avg EMG" value={avgEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard title="Peak EMG" value={maxEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
         </View>
 
-        {/* Chart selector */}
+        {/* Chart type selector */}
         <Card style={styles.segment} mode="outlined">
           <Card.Content style={styles.segmentContent}>
             {metricOptions.map((opt) => {
@@ -517,6 +532,31 @@ export default function SetAnalyticsScreen() {
             })}
           </Card.Content>
         </Card>
+
+        {/* EMG channel selector */}
+        {metric === "force" && (
+          <Card style={styles.segment} mode="outlined">
+            <Card.Content style={styles.segmentContent}>
+              {EMG_CHANNELS.map((ch) => {
+                const active = selectedEmgChannel === ch.key;
+                return (
+                  <Button
+                    key={ch.key}
+                    mode={active ? "contained" : "outlined"}
+                    onPress={() => setSelectedEmgChannel(ch.key)}
+                    compact
+                    style={{ flex: 1 }}
+                    buttonColor={active ? colors.primary : undefined}
+                    textColor={active ? "#fff" : colors.onSurface}
+                    labelStyle={{ fontSize: 11 }}
+                  >
+                    {ch.label}
+                  </Button>
+                );
+              })}
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Chart */}
         {selectedSeries.length >= 2 && (
@@ -605,7 +645,7 @@ export default function SetAnalyticsScreen() {
                 <Text style={styles.consistencyLabel}>{consistencyLabel}</Text>
               </View>
               <Text style={styles.consistencySideText}>
-                Measures force stability{"\n"}in this set
+                {emgChannelLabel} signal{"\n"}stability (CV)
               </Text>
             </View>
           </Card.Content>
@@ -656,30 +696,6 @@ export default function SetAnalyticsScreen() {
           </Card.Content>
         </Card>
 
-        {/* Placeholder bar chart */}
-        <Card style={styles.chartCard} mode="outlined">
-          <Card.Content>
-            <Text variant="titleSmall" style={{ marginBottom: 10 }}>
-              Set-by-Set Comparison (Placeholder)
-            </Text>
-            <View style={{ width: screenWidth - 32, alignSelf: "center" }}>
-              <BarChart
-                data={barData}
-                width={screenWidth - 32}
-                height={220}
-                yAxisLabel=""
-                yAxisSuffix="N"
-                fromZero
-                chartConfig={{ ...chartConfig, paddingRight: 12 }}
-                style={{ borderRadius: 12 }}
-              />
-            </View>
-            <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginTop: 8 }}>
-              Showing <Text style={{ color: colors.onSurface, fontWeight: "700" }}>Average Force</Text>{" "}
-              (placeholder).
-            </Text>
-          </Card.Content>
-        </Card>
       </ScrollView>
     </SafeAreaView>
   );
