@@ -18,6 +18,7 @@ import {
   initBleDb,
   listSamplesForSet,
   getLatestCalibration,
+  getBaselineOffsets,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth } from "../utils/format";
@@ -206,14 +207,15 @@ export default function SetAnalyticsScreen() {
       if (isSqlite) {
         initBleDb();
 
+        const baseline = getBaselineOffsets(setId);
         const sqliteRows = listSamplesForSet(setId, 5000);
 
         const rows: SampleRow[] = sqliteRows.map((r: any) => ({
           time: Number(r.t_ms),
-          emg_left_tricep: Number(r.emg_left_tricep ?? 0),
-          emg_left_pec: Number(r.emg_left_pec ?? 0),
-          emg_right_tricep: Number(r.emg_right_tricep ?? 0),
-          emg_right_pec: Number(r.emg_right_pec ?? 0),
+          emg_left_tricep: Math.max(0, Number(r.emg_left_tricep ?? 0) - baseline.emg_left_tricep),
+          emg_left_pec: Math.max(0, Number(r.emg_left_pec ?? 0) - baseline.emg_left_pec),
+          emg_right_tricep: Math.max(0, Number(r.emg_right_tricep ?? 0) - baseline.emg_right_tricep),
+          emg_right_pec: Math.max(0, Number(r.emg_right_pec ?? 0) - baseline.emg_right_pec),
           gyrx: Number(r.r_roll ?? r.l_roll ?? 0),
         }));
 

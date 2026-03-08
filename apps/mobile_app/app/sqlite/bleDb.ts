@@ -144,6 +144,11 @@ export function initBleDb() {
       label TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER,
+      baseline_emg_left_tricep REAL DEFAULT 0,
+      baseline_emg_left_pec REAL DEFAULT 0,
+      baseline_emg_right_tricep REAL DEFAULT 0,
+      baseline_emg_right_pec REAL DEFAULT 0,
+      rep_count INTEGER DEFAULT 0,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_sets_session ON sets(session_id);
@@ -178,6 +183,18 @@ export function initBleDb() {
     CREATE INDEX IF NOT EXISTS idx_samples_set_time ON samples(set_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_session_time ON samples(session_id, t_ms);
     CREATE INDEX IF NOT EXISTS idx_samples_user_time ON samples(user_id, t_ms);
+
+    CREATE TABLE IF NOT EXISTS reps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      set_id TEXT NOT NULL,
+      rep_number INTEGER NOT NULL,
+      start_ms INTEGER NOT NULL,
+      end_ms INTEGER,
+      peak_emg REAL,
+      mean_emg REAL,
+      FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_reps_set ON reps(set_id);
 
     CREATE TABLE IF NOT EXISTS calibrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -235,6 +252,80 @@ export function endSession(sessionId: string) {
 export function endSet(setId: string) {
   const db = getDb();
   db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), setId]);
+}
+
+export type BaselineOffsets = {
+  emg_left_tricep: number;
+  emg_left_pec: number;
+  emg_right_tricep: number;
+  emg_right_pec: number;
+};
+
+export function saveBaselineOffsets(setId: string, offsets: BaselineOffsets) {
+  const db = getDb();
+  db.runSync(
+    `UPDATE sets SET baseline_emg_left_tricep = ?, baseline_emg_left_pec = ?,
+                     baseline_emg_right_tricep = ?, baseline_emg_right_pec = ?
+     WHERE id = ?`,
+    [offsets.emg_left_tricep, offsets.emg_left_pec, offsets.emg_right_tricep, offsets.emg_right_pec, setId]
+  );
+}
+
+export function getBaselineOffsets(setId: string): BaselineOffsets {
+  const db = getDb();
+  const row = db.getFirstSync<any>(
+    `SELECT baseline_emg_left_tricep, baseline_emg_left_pec,
+            baseline_emg_right_tricep, baseline_emg_right_pec
+     FROM sets WHERE id = ?`,
+    [setId]
+  );
+  return {
+    emg_left_tricep: row?.baseline_emg_left_tricep ?? 0,
+    emg_left_pec: row?.baseline_emg_left_pec ?? 0,
+    emg_right_tricep: row?.baseline_emg_right_tricep ?? 0,
+    emg_right_pec: row?.baseline_emg_right_pec ?? 0,
+  };
+}
+
+/* ------------------------ REP HELPERS ------------------------ */
+
+export type RepRow = {
+  id: number;
+  set_id: string;
+  rep_number: number;
+  start_ms: number;
+  end_ms: number | null;
+  peak_emg: number | null;
+  mean_emg: number | null;
+};
+
+export function insertRep(args: {
+  setId: string;
+  repNumber: number;
+  startMs: number;
+  endMs: number;
+  peakEmg?: number;
+  meanEmg?: number;
+}) {
+  const db = getDb();
+  db.runSync(
+    `INSERT INTO reps (set_id, rep_number, start_ms, end_ms, peak_emg, mean_emg)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [args.setId, args.repNumber, args.startMs, args.endMs, args.peakEmg ?? null, args.meanEmg ?? null]
+  );
+}
+
+export function listRepsForSet(setId: string): RepRow[] {
+  const db = getDb();
+  return db.getAllSync<RepRow>(
+    `SELECT * FROM reps WHERE set_id = ? ORDER BY rep_number ASC`,
+    [setId]
+  );
+}
+
+export function updateSetRepCount(setId: string, repCount: number) {
+  const db = getDb();
+  db.runSync(`UPDATE sets SET rep_count = ? WHERE id = ?`, [repCount, setId]);
 }
 
 export function renameSession(sessionId: string, label: string) {
