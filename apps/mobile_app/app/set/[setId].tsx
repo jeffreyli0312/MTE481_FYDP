@@ -135,6 +135,19 @@ function emaSmooth(points: Point[], alpha = 0.2): Point[] {
   return out;
 }
 
+/**
+ * Drop leading samples below `frac` of the series peak.
+ * Prevents the chart from starting at y≈0 during the RMS warm-up ramp
+ * or pre-activity baseline period.
+ */
+function trimLeadingBaseline(pts: Point[], frac = 0.05): Point[] {
+  if (!pts.length) return pts;
+  const peak = Math.max(...pts.map((p) => p.value));
+  const threshold = peak * frac;
+  const first = pts.findIndex((p) => p.value >= threshold);
+  return first > 0 ? pts.slice(first) : pts;
+}
+
 export default function SetAnalyticsScreen() {
   const { colors, dark } = useAppTheme();
   const { user } = useAuth();
@@ -315,12 +328,12 @@ export default function SetAnalyticsScreen() {
 
   const displayEmg = useMemo(() => {
     const ds = downsampleMinMax(emgSeries, displayMaxPoints);
-    return rmsEnvelope(ds, 25);
+    return trimLeadingBaseline(rmsEnvelope(ds, 25));
   }, [emgSeries]);
 
   const displayImu = useMemo(() => {
     const ds = downsampleMinMax(imuSeries, displayMaxPoints);
-    return emaSmooth(ds, 0.25);
+    return trimLeadingBaseline(emaSmooth(ds, 0.25));
   }, [imuSeries]);
 
   const emgChartWidth = useMemo(

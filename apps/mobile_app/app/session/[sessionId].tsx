@@ -55,6 +55,68 @@ function resample(pts: { t: number; v: number }[], n: number, maxT: number): num
   return out;
 }
 
+type Point = { time: number; value: number };
+
+/** Min-max bucket downsampling — same as [setId].tsx */
+function downsampleMinMax(points: Point[], maxPoints: number): Point[] {
+  if (!Number.isFinite(maxPoints) || maxPoints === Infinity) return points;
+  if (maxPoints <= 2 || points.length <= maxPoints) return points;
+  const bucketCount = Math.max(1, Math.floor(maxPoints / 2));
+  const bucketSize = Math.ceil(points.length / bucketCount);
+  const out: Point[] = [];
+  for (let b = 0; b < bucketCount; b++) {
+    const start = b * bucketSize;
+    const end = Math.min(points.length, start + bucketSize);
+    if (start >= end) break;
+    let minP = points[start], maxP = points[start];
+    for (let i = start + 1; i < end; i++) {
+      if (points[i].value < minP.value) minP = points[i];
+      if (points[i].value > maxP.value) maxP = points[i];
+    }
+    out.push(...(minP.time <= maxP.time ? [minP, maxP] : [maxP, minP]));
+  }
+  const last = points[points.length - 1];
+  if (!out.length || out[out.length - 1].time !== last.time) out.push(last);
+  return out.length > maxPoints ? out.slice(0, maxPoints) : out;
+}
+
+/** Rolling RMS envelope — same as [setId].tsx */
+function rmsEnvelope(points: Point[], windowSize = 25): Point[] {
+  if (windowSize <= 1) return points;
+  const out: Point[] = [];
+  let sumSq = 0;
+  const buf: number[] = [];
+  for (const p of points) {
+    const vv = p.value * p.value;
+    buf.push(vv); sumSq += vv;
+    if (buf.length > windowSize) sumSq -= buf.shift()!;
+    out.push({ time: p.time, value: Math.sqrt(sumSq / buf.length) });
+  }
+  return out;
+}
+
+/** Exponential moving average — same as [setId].tsx */
+function emaSmooth(points: Point[], alpha = 0.2): Point[] {
+  if (!points.length) return points;
+  const a = Math.max(0.001, Math.min(0.999, alpha));
+  let prev = points[0].value;
+  const out: Point[] = [{ time: points[0].time, value: prev }];
+  for (let i = 1; i < points.length; i++) {
+    prev = a * points[i].value + (1 - a) * prev;
+    out.push({ time: points[i].time, value: prev });
+  }
+  return out;
+}
+
+/** Drop leading samples below 5% of peak — same as [setId].tsx */
+function trimLeadingBaseline(pts: Point[], frac = 0.05): Point[] {
+  if (!pts.length) return pts;
+  const peak = Math.max(...pts.map((p) => p.value));
+  const threshold = peak * frac;
+  const first = pts.findIndex((p) => p.value >= threshold);
+  return first > 0 ? pts.slice(first) : pts;
+}
+
 type SupabaseSetRow = {
   id: string;
   session_id: string;
@@ -123,9 +185,12 @@ export default function SessionSetsScreen() {
 
   // ── Graph state (SQLite only) ────────────────────────────────────────────
   type SetLine = { label: string; data: number[] };
-  const [setLines, setSetLines] = useState<SetLine[]>([]);
+  // EMG: 4 independent channels, each as a per-set SetLine[]
+  const [emgLines, setEmgLines] = useState<{
+    ltri: SetLine[]; lpec: SetLine[]; rtri: SetLine[]; rpec: SetLine[];
+  }>({ ltri: [], lpec: [], rtri: [], rpec: [] });
   const [maxDurationMs, setMaxDurationMs] = useState(0);
-  // IMU: one SetLine per gyro axis (gyrx, gyry, gyrz), each set averaged
+  // IMU: Roll/Pitch/Yaw per-set overlay
   const [imuLines, setImuLines] = useState<{ gyrx: SetLine[]; gyry: SetLine[]; gyrz: SetLine[] }>(
     { gyrx: [], gyry: [], gyrz: [] }
   );
@@ -197,31 +262,38 @@ export default function SessionSetsScreen() {
             setSetDuration(nextDur);
             setLoading(false);
 
-            const allSetLines: { label: string; pts: { t: number; v: number }[] }[] = [];
+            // EMG: 4 independent channels, each downsampled → RMS envelope → resample to CHART_POINTS
+            type ChanLines = { label: string; pts: { t: number; v: number }[] }[];
+            const ltriLines: ChanLines = [], lpecLines: ChanLines = [];
+            const rtriLines: ChanLines = [], rpecLines: ChanLines = [];
+            const DOWNSAMPLE_MAX = 2000;
             for (const st of sqliteSets) {
               const smp = listAllSamplesForSet(st.id);
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
-              const pts = smp
-                .map((s) => {
-                  const raw = Number(s.emg_left_pec ?? 0);
-                  return { t: s.t_ms - t0, v: mvc > 0 ? (raw / mvc) * 100 : raw };
-                })
-                .sort((a, b) => a.t - b.t);
-              allSetLines.push({ label: st.label ?? `Set ${allSetLines.length + 1}`, pts });
+              const label = st.label ?? `Set ${ltriLines.length + 1}`;
+              const toEnv = (key: "emg_left_tricep" | "emg_left_pec" | "emg_right_tricep" | "emg_right_pec") => {
+                const raw: Point[] = smp.map((s) => {
+                  const v = Number((s as any)[key] ?? 0);
+                  return { time: s.t_ms - t0, value: mvc > 0 ? (v / mvc) * 100 : v };
+                });
+                const env = rmsEnvelope(downsampleMinMax(raw, DOWNSAMPLE_MAX), 25);
+                return trimLeadingBaseline(env).map((p) => ({ t: p.time, v: p.value }));
+              };
+              ltriLines.push({ label, pts: toEnv("emg_left_tricep")  });
+              lpecLines.push({ label, pts: toEnv("emg_left_pec")     });
+              rtriLines.push({ label, pts: toEnv("emg_right_tricep") });
+              rpecLines.push({ label, pts: toEnv("emg_right_pec")    });
             }
-            if (allSetLines.length >= 1) {
-              const maxT = Math.max(...allSetLines.map((s) => s.pts[s.pts.length - 1]?.t ?? 0));
-              setSetLines(
-                allSetLines.map((s) => ({
-                  label: s.label,
-                  data: resample(s.pts, CHART_POINTS, maxT),
-                }))
-              );
+            if (ltriLines.length >= 1) {
+              const maxT = Math.max(...ltriLines.map((s) => s.pts[s.pts.length - 1]?.t ?? 0));
+              const build = (lines: ChanLines) =>
+                lines.map((s) => ({ label: s.label, data: resample(s.pts, CHART_POINTS, maxT) }));
+              setEmgLines({ ltri: build(ltriLines), lpec: build(lpecLines), rtri: build(rtriLines), rpec: build(rpecLines) });
               setMaxDurationMs(maxT);
             }
 
-            // Build per-set IMU lines: l_roll, l_pitch, l_yaw
+            // IMU: l_roll/pitch/yaw per set — downsample → EMA smooth → resample
             type AxisLines = { label: string; pts: { t: number; v: number }[] }[];
             const rollLines: AxisLines = [], pitchLines: AxisLines = [], yawLines: AxisLines = [];
             for (const st of sqliteSets) {
@@ -229,9 +301,14 @@ export default function SessionSetsScreen() {
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
               const label = st.label ?? `Set ${rollLines.length + 1}`;
-              rollLines.push({  label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_roll  ?? 0) })) });
-              pitchLines.push({ label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_pitch ?? 0) })) });
-              yawLines.push({   label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_yaw   ?? 0) })) });
+              const toSmooth = (key: "l_roll" | "l_pitch" | "l_yaw") => {
+                const raw: Point[] = smp.map((s) => ({ time: s.t_ms - t0, value: Number((s as any)[key] ?? 0) }));
+                const sm = emaSmooth(downsampleMinMax(raw, DOWNSAMPLE_MAX), 0.25);
+                return trimLeadingBaseline(sm).map((p) => ({ t: p.time, v: p.value }));
+              };
+              rollLines.push({  label, pts: toSmooth("l_roll")  });
+              pitchLines.push({ label, pts: toSmooth("l_pitch") });
+              yawLines.push({   label, pts: toSmooth("l_yaw")   });
             }
             if (rollLines.length >= 1) {
               const imuMaxT = Math.max(...rollLines.map((s) => s.pts[s.pts.length - 1]?.t ?? 0));
@@ -319,29 +396,47 @@ export default function SessionSetsScreen() {
     };
   }, [sessionId, isSqlite]);
 
+  // ── Chart config — matching [setId].tsx exactly ────────────────────────────────────────────
+  // 4 channel colours for EMG legend (L Tri, L Pec, R Tri, R Pec)
+  const EMG_CH_COLORS = [
+    (o: number) => `rgba(59,130,246,${o})`,   // L Tri – blue
+    (o: number) => `rgba(249,115,22,${o})`,   // L Pec – orange
+    (o: number) => `rgba(34,197,94,${o})`,    // R Tri – green
+    (o: number) => `rgba(168,85,247,${o})`,   // R Pec – purple
+  ] as const;
+  const EMG_CH_LABELS = ["L Tri", "L Pec", "R Tri", "R Pec"] as const;
+
   // ── Graph chart data (SQLite only) ──────────────────────────────────────
   const chartData = useMemo(() => {
-    if (setLines.length === 0) return null;
+    if (emgLines.ltri.length === 0) return null;
     const labelStep = Math.max(1, Math.floor(CHART_POINTS / 6));
     const totalS = maxDurationMs / 1000;
     const labels = Array.from({ length: CHART_POINTS }, (_, i) =>
       i % labelStep === 0 ? ((i / (CHART_POINTS - 1)) * totalS).toFixed(1) + "s" : ""
     );
-    const datasets = setLines.slice(0, LINE_COLORS.length).map((line, idx) => ({
-      data: line.data,
-      color: LINE_COLORS[idx % LINE_COLORS.length],
-      strokeWidth: 2,
-    }));
+    const channels = [emgLines.ltri, emgLines.lpec, emgLines.rtri, emgLines.rpec];
+    const datasets: { data: number[]; color: (o: number) => string; strokeWidth: number }[] = [];
+    const n = Math.min(channels[0].length, 3);
+    for (let si = 0; si < n; si++) {
+      const alpha = 1 - si * 0.25;
+      channels.forEach((ch, ci) => {
+        datasets.push({ data: ch[si].data, color: (o) => EMG_CH_COLORS[ci](o * alpha), strokeWidth: 2 });
+      });
+    }
     return { labels, datasets };
-  }, [setLines, maxDurationMs]);
+  }, [emgLines, maxDurationMs]);
+
+  const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
   const chartConfig = useMemo(() => ({
     backgroundGradientFrom: colors.surface,
     backgroundGradientTo: colors.surface,
-    decimalPlaces: 0,
-    color: (opacity = 1) => dark ? `rgba(255,255,255,${opacity})` : `rgba(0,0,0,${opacity})`,
-    labelColor: (opacity = 1) => dark ? `rgba(156,163,175,${opacity})` : `rgba(107,114,128,${opacity})`,
-    propsForBackgroundLines: { strokeDasharray: "4 6", stroke: dark ? "#374151" : "#e5e7eb" },
+    decimalPlaces: 1,
+    color: (opacity = 1) =>
+      dark ? `rgba(96,165,250,${clamp01(opacity)})` : `rgba(37,99,235,${clamp01(opacity)})`,
+    labelColor: (opacity = 1) =>
+      dark ? `rgba(156,163,175,${clamp01(opacity)})` : `rgba(107,114,128,${clamp01(opacity)})`,
+    propsForBackgroundLines: { strokeDasharray: "3 6", stroke: dark ? "#374151" : "#e5e7eb" },
     propsForDots: { r: "0" },
     useShadowColorFromDataset: true,
   }), [dark, colors.surface]);
@@ -465,17 +560,15 @@ export default function SessionSetsScreen() {
             <Card style={styles.chartCard} mode="outlined">
               <Card.Content>
                 <Text variant="titleSmall" style={{ marginBottom: 8 }}>
-                  {mvcValue > 0 ? "Left Pectoral EMG (% MVC)" : "Left Pectoral EMG"}
+                  {mvcValue > 0 ? "EMG – All Channels (% MVC)" : "EMG – All Channels"}
                 </Text>
 
-                {/* Legend */}
+                {/* Channel legend */}
                 <View style={styles.legend}>
-                  {setLines.slice(0, LINE_COLORS.length).map((line, idx) => (
-                    <View key={idx} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: LINE_COLORS[idx](1) }]} />
-                      <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
-                        {line.label}
-                      </Text>
+                  {EMG_CH_LABELS.map((lbl, ci) => (
+                    <View key={lbl} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: EMG_CH_COLORS[ci](1) }]} />
+                      <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>{lbl}</Text>
                     </View>
                   ))}
                 </View>

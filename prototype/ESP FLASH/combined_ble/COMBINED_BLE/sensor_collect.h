@@ -75,7 +75,8 @@ static int16_t processEmgChannel(EmgChannel &ch, int pin) {
     float envelope = ch.smoothSum / EMG_SMOOTH_BUF_SIZE;
 
     // Scale to int16: store millivolts (preserves 3 decimal places of a 0–3.3 V signal)
-    return (int16_t)(envelope * 1000.0f);
+    // return (int16_t)(envelope * 1000.0f);
+    return (int16_t)(v_raw * 1000.0f);
 }
 
 // =================================================================================
