@@ -41,6 +41,7 @@ export type SessionRow = {
   id: string;
   user_id: string;
   device_id: string | null;
+  label: string | null;
   started_at: number;
   ended_at: number | null;
 };
@@ -95,14 +96,18 @@ export function initBleDb() {
   const db = getDb();
 
   // Migrate from old schema: if samples table has l_gyrx instead of l_roll, drop it
-  const cols = db.getAllSync<{ name: string }>(
-    `PRAGMA table_info(samples)`
-  );
-  const hasOldSchema = cols.some((c) => c.name === "l_gyrx");
-  if (hasOldSchema) {
+  // Migrate: old samples schema (l_gyrx -> l_roll)
+  const sampleCols = db.getAllSync<{ name: string }>(`PRAGMA table_info(samples)`);
+  if (sampleCols.some((c) => c.name === "l_gyrx")) {
     db.execSync(`DROP TABLE IF EXISTS samples`);
   }
-  
+
+  // Migrate: add label column to sessions if missing
+  const sessionCols = db.getAllSync<{ name: string }>(`PRAGMA table_info(sessions)`);
+  if (sessionCols.length > 0 && !sessionCols.some((c) => c.name === "label")) {
+    db.execSync(`ALTER TABLE sessions ADD COLUMN label TEXT`);
+  }
+
   db.execSync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -111,6 +116,7 @@ export function initBleDb() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       device_id TEXT,
+      label TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER
     );
@@ -203,6 +209,18 @@ export function endSession(sessionId: string) {
 export function endSet(setId: string) {
   const db = getDb();
   db.runSync(`UPDATE sets SET ended_at = ? WHERE id = ?`, [Date.now(), setId]);
+}
+
+export function renameSession(sessionId: string, label: string) {
+  const db = getDb();
+  db.runSync(`UPDATE sessions SET label = ? WHERE id = ?`, [label, sessionId]);
+}
+
+export function deleteSession(sessionId: string) {
+  const db = getDb();
+  db.runSync(`DELETE FROM samples WHERE session_id = ?`, [sessionId]);
+  db.runSync(`DELETE FROM sets WHERE session_id = ?`, [sessionId]);
+  db.runSync(`DELETE FROM sessions WHERE id = ?`, [sessionId]);
 }
 
 export function insertSample(args: {
@@ -304,6 +322,13 @@ export function listSessions(userId: string): SessionRow[] {
   return db.getAllSync<SessionRow>(
     `SELECT * FROM sessions WHERE user_id = ? ORDER BY started_at DESC`,
     [userId]
+  );
+}
+
+export function listAllSessions(): SessionRow[] {
+  const db = getDb();
+  return db.getAllSync<SessionRow>(
+    `SELECT * FROM sessions ORDER BY started_at DESC`
   );
 }
 

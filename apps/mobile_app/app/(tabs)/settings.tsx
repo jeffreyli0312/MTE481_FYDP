@@ -1,23 +1,15 @@
 import { View, StyleSheet } from "react-native";
-import { Text, Switch, Button } from "react-native-paper";
+import { Text, Switch, Divider } from "react-native-paper";
 import { useTheme } from "../context/ThemeContext";
-import { useAuth } from "../context/AuthContext";
+import { useDevMode } from "../context/DevModeContext";
 import { useAppTheme } from "../theme";
 
 export default function SettingsScreen() {
   const { theme, toggleTheme } = useTheme();
-  const { signOut } = useAuth();
+  const { devMode, toggleDevMode } = useDevMode();
   const { colors } = useAppTheme();
 
   const isDark = theme === "dark";
-
-  async function onLogout() {
-    try {
-      await signOut();
-    } catch (e: any) {
-      alert(e?.message ?? "Logout failed");
-    }
-  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -32,15 +24,19 @@ export default function SettingsScreen() {
         <Switch value={isDark} onValueChange={toggleTheme} color={colors.primary} />
       </View>
 
-      <Button
-        mode="contained"
-        onPress={onLogout}
-        buttonColor={colors.error}
-        textColor={colors.onError}
-        style={styles.logoutBtn}
-      >
-        Log out
-      </Button>
+      <Divider style={{ marginVertical: 8 }} />
+
+      <View style={styles.row}>
+        <View style={{ flex: 1 }}>
+          <Text variant="bodyLarge" style={{ color: colors.onSurface }}>
+            Developer mode
+          </Text>
+          <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant }}>
+            Shows the Database tab for inspecting local data
+          </Text>
+        </View>
+        <Switch value={devMode} onValueChange={toggleDevMode} color={colors.primary} />
+      </View>
     </View>
   );
 }
@@ -56,10 +52,5 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 12,
-    marginTop: 16,
-  },
-  logoutBtn: {
-    marginTop: 24,
-    borderRadius: 12,
   },
 });

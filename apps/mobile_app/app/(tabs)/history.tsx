@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { router } from "expo-router";
 import {
   SafeAreaView,
@@ -6,6 +6,7 @@ import {
   View,
   StyleSheet,
   StatusBar,
+  RefreshControl,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { useAppTheme } from "../theme";
@@ -20,6 +21,13 @@ export default function HistoryScreen() {
   const { user } = useAuth();
 
   const local = useLocalSessions(user?.id);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    local.reload();
+    setRefreshing(false);
+  }, [local]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -35,24 +43,29 @@ export default function HistoryScreen() {
             Previous Sessions
           </Text>
           <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
-            Tap a session to view details
+            Pull down to refresh
           </Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
           <ListState
             loading={local.loading}
             error={local.error}
             empty={local.sessions.length === 0}
             emptyMessage="No sessions yet. Record a session to see it here."
           >
-            {local.sessions.map((s) => (
+            {local.sessions.map((s, idx) => (
               <SessionCard
                 key={s.id}
                 dateLabel={formatDateFromMs(s.startedAtMs)}
                 durationLabel={formatDurationFromMs(s.durationMs)}
-                title="Local Session"
-                subtitle={`${s.setCount} ${s.setCount === 1 ? "Set" : "Sets"}`}
+                title={`Session ${local.sessions.length - idx}`}
+                subtitle={`${s.setCount} ${s.setCount === 1 ? "Set" : "Sets"} · ${s.sampleCount} samples`}
                 onPress={() =>
                   router.push({
                     pathname: "/session/[sessionId]",

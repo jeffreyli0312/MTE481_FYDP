@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   initBleDb,
-  listSessions,
+  listAllSessions,
   listSets,
   listSamplesForSet,
+  countSamplesForSet,
   type SessionRow,
   type SetRow,
 } from "../sqlite/bleDb";
@@ -20,50 +21,48 @@ export type LocalSessionSummary = {
 };
 
 /**
- * Loads all SQLite sessions for a given userId and computes
- * duration / set count / sample count / average EMG for each.
+ * Loads all local SQLite sessions and computes summary stats for each.
+ * The userId param is kept for API compatibility but all sessions are loaded.
  */
-export function useLocalSessions(userId: string | undefined) {
+export function useLocalSessions(_userId?: string | undefined) {
   const [sessions, setSessions] = useState<LocalSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    if (!userId) {
-      setSessions([]);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
       initBleDb();
-      const rows = listSessions(userId);
+      const rows = listAllSessions();
 
       const summaries: LocalSessionSummary[] = rows.map((session: SessionRow) => {
         const sets: SetRow[] = listSets(session.id);
 
         let minReceived: number | null = null;
         let maxReceived: number | null = null;
-        let totalEmg = 0;
         let sampleCount = 0;
+        let totalEmg = 0;
 
         for (const st of sets) {
-          const samples = listSamplesForSet(st.id, 5000);
-          for (const smp of samples) {
-            sampleCount++;
-            const ra = smp.received_at ?? null;
-            if (ra != null) {
-              if (minReceived == null || ra < minReceived) minReceived = ra;
-              if (maxReceived == null || ra > maxReceived) maxReceived = ra;
+          const count = countSamplesForSet(st.id);
+          sampleCount += count;
+
+          if (count > 0) {
+            const samples = listSamplesForSet(st.id, count);
+            for (const smp of samples) {
+              const ra = smp.received_at ?? null;
+              if (ra != null) {
+                if (minReceived == null || ra < minReceived) minReceived = ra;
+                if (maxReceived == null || ra > maxReceived) maxReceived = ra;
+              }
+              totalEmg +=
+                Number(smp.emg_left_tricep ?? 0) +
+                Number(smp.emg_left_pec ?? 0) +
+                Number(smp.emg_right_tricep ?? 0) +
+                Number(smp.emg_right_pec ?? 0);
             }
-            totalEmg +=
-              Number(smp.emg_left_tricep ?? 0) +
-              Number(smp.emg_left_pec ?? 0) +
-              Number(smp.emg_right_tricep ?? 0) +
-              Number(smp.emg_right_pec ?? 0);
           }
         }
 
@@ -92,7 +91,7 @@ export function useLocalSessions(userId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     load();
