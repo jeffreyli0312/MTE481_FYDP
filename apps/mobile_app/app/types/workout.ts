@@ -8,6 +8,7 @@ export type SetRecord = {
   id: string;
   durationSec: number;
   avgForceN: number;
+  sampleCount: number;
 };
 
 export type SessionRecord = {

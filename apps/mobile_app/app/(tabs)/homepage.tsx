@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
 import SessionView from "../components/SessionView";
@@ -73,6 +74,14 @@ export default function HomePageScreen() {
       return { ...prev, [selectedExerciseId]: [session, ...existing] };
     });
     setExerciseMode("overview");
+    router.push({
+      pathname: "/session/[sessionId]",
+      params: {
+        sessionId: session.id,
+        source: "sqlite",
+        title: selectedExerciseName,
+      },
+    });
   }
 
   // ─── Exercise page (overview or active session) ───

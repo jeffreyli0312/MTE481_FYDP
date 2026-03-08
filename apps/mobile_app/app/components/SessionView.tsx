@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { Card, Text, Button, Badge } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
@@ -15,6 +16,7 @@ import {
   endSession as dbEndSession,
   insertSample,
   parsePacket,
+  countSamplesForSet,
 } from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
@@ -122,12 +124,15 @@ export default function SessionView({
     }
 
     const duration = Math.max(1, setSeconds);
+    const setId = currentSetIdRef.current ?? `set-${Date.now()}`;
+    const samples = countSamplesForSet(setId);
     setCompletedSets((prev) => [
       ...prev,
       {
-        id: currentSetIdRef.current ?? `set-${Date.now()}`,
+        id: setId,
         durationSec: duration,
         avgForceN: 0,
+        sampleCount: samples,
       },
     ]);
     currentSetIdRef.current = null;
@@ -325,7 +330,17 @@ export default function SessionView({
       ) : (
         <View style={{ gap: 10 }}>
           {completedSets.map((set, idx) => (
-            <Card key={set.id} style={styles.setRowCard} mode="outlined">
+            <Card
+              key={set.id}
+              style={styles.setRowCard}
+              mode="outlined"
+              onPress={() =>
+                router.push({
+                  pathname: "/set/[setId]",
+                  params: { setId: set.id, source: "sqlite" },
+                })
+              }
+            >
               <Card.Content style={styles.setRowContent}>
                 <View
                   style={[
@@ -349,14 +364,10 @@ export default function SessionView({
                     Set {idx + 1}
                   </Text>
                   <Text
-                    variant="titleSmall"
-                    style={{
-                      color: colors.onSurface,
-                      fontWeight: "900",
-                      marginTop: 2,
-                    }}
+                    variant="bodySmall"
+                    style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
                   >
-                    {set.durationSec}s
+                    {set.durationSec}s · {set.sampleCount} samples
                   </Text>
                 </View>
 
@@ -364,14 +375,13 @@ export default function SessionView({
                   <Feather
                     name="bar-chart-2"
                     size={16}
+                    color={colors.primary}
+                  />
+                  <Feather
+                    name="chevron-right"
+                    size={16}
                     color={colors.onSurfaceVariant}
                   />
-                  <Text
-                    variant="labelMedium"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    View Stats
-                  </Text>
                 </View>
               </Card.Content>
             </Card>
