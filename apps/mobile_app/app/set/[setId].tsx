@@ -20,6 +20,7 @@ import {
   getLatestCalibration,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
+import { movingAverageSmooth } from "../utils/format";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -327,12 +328,14 @@ export default function SetAnalyticsScreen() {
   const displayMaxPoints = 2000;
 
   const displayEmg = useMemo(() => {
-    const ds = downsampleMinMax(emgSeries, displayMaxPoints);
+    const smoothed = movingAverageSmooth(emgSeries, 10);
+    const ds = downsampleMinMax(smoothed, displayMaxPoints);
     return trimLeadingBaseline(rmsEnvelope(ds, 25));
   }, [emgSeries]);
 
   const displayImu = useMemo(() => {
-    const ds = downsampleMinMax(imuSeries, displayMaxPoints);
+    const smoothed = movingAverageSmooth(imuSeries, 10);
+    const ds = downsampleMinMax(smoothed, displayMaxPoints);
     return trimLeadingBaseline(emaSmooth(ds, 0.25));
   }, [imuSeries]);
 

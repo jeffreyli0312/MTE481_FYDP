@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
-import { formatMMSS } from "../utils/format";
+import { formatMMSS, MovingAverage } from "../utils/format";
 import BackButton from "./BackButton";
 import DeviceConnectionCard from "./DeviceConnectionCard";
 import {
@@ -56,6 +56,7 @@ export default function SessionView({
   const [repCount, setRepCount] = useState(0);
   const repCountRef = useRef(0);
   const schmittStateRef = useRef<"low" | "high">("low");
+  const emgMaRef = useRef(new MovingAverage(10));
 
   const mvcValue = calibration?.mvc_value ?? 0;
   const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
@@ -112,6 +113,7 @@ export default function SessionView({
     setSampleCount(0);
     repCountRef.current = 0;
     schmittStateRef.current = "low";
+    emgMaRef.current.reset();
     setRepCount(0);
 
     ble.startLogging((batch) => {
@@ -127,7 +129,8 @@ export default function SessionView({
           count++;
 
           if (mvcValue > 0) {
-            const emgVal = parsed[calibratedChannel] as number;
+            const rawEmg = parsed[calibratedChannel] as number;
+            const emgVal = emgMaRef.current.push(rawEmg);
             if (schmittStateRef.current === "low" && emgVal >= upperThreshold) {
               schmittStateRef.current = "high";
             } else if (schmittStateRef.current === "high" && emgVal <= lowerThreshold) {
