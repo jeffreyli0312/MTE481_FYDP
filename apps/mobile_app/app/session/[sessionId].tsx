@@ -28,6 +28,7 @@ import { useAuth } from "../context/AuthContext";
 
 const screenWidth = Dimensions.get("window").width;
 const CHART_POINTS = 120;
+const FLARE_THRESHOLD = 15; // degrees
 
 const LINE_COLORS: ((o: number) => string)[] = [
   (o) => `rgba(59,130,246,${o})`,
@@ -195,6 +196,7 @@ export default function SessionSetsScreen() {
     { gyrx: [], gyry: [], gyrz: [] }
   );
   const [imuMaxDurationMs, setImuMaxDurationMs] = useState(0);
+  const [setFlare, setSetFlare] = useState<Record<string, { detected: boolean; maxDev: number }>>({});
   // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -227,17 +229,23 @@ export default function SessionSetsScreen() {
           }));
 
           const nextDur: Record<string, string> = {};
+          const nextFlare: Record<string, { detected: boolean; maxDev: number }> = {};
 
           for (const st of sqliteSets) {
             const samples = listSamplesForSet(st.id, 1000);
 
             if (samples.length === 0) {
               nextDur[st.id] = "\u2014";
+              nextFlare[st.id] = { detected: false, maxDev: 0 };
               continue;
             }
 
             let minReceivedAt: number | null = null;
             let maxReceivedAt: number | null = null;
+
+            // Shoulder flare: baseline yaw from first sample, then track max deviation
+            const baselineYaw = Number(samples[0].l_yaw ?? 0);
+            let maxYawDev = 0;
 
             for (const smp of samples) {
               const receivedAt = smp.received_at ?? null;
@@ -249,17 +257,29 @@ export default function SessionSetsScreen() {
               if (maxReceivedAt == null || receivedAt > maxReceivedAt) {
                 maxReceivedAt = receivedAt;
               }
+
+              // Wrap raw deviation to [-180, 180]
+              let rawDev = Number(smp.l_yaw ?? 0) - baselineYaw;
+              if (rawDev > 180) rawDev -= 360;
+              if (rawDev < -180) rawDev += 360;
+
+              if (Math.abs(rawDev) > Math.abs(maxYawDev)) {
+                maxYawDev = rawDev; // Keep the signed value with the largest magnitude
+              }
             }
 
             nextDur[st.id] =
               minReceivedAt != null && maxReceivedAt != null
                 ? formatDurationFromMs(maxReceivedAt - minReceivedAt)
                 : "\u2014";
+
+            nextFlare[st.id] = { detected: Math.abs(maxYawDev) > FLARE_THRESHOLD, maxDev: maxYawDev };
           }
 
           if (!cancelled) {
             setSets(mappedSets);
             setSetDuration(nextDur);
+            setSetFlare(nextFlare);
             setLoading(false);
 
             // EMG: 4 independent channels, each downsampled → RMS envelope → resample to CHART_POINTS
@@ -519,6 +539,26 @@ export default function SessionSetsScreen() {
         </Text>
       </View>
 
+      {/* Shoulder flare banner — shown when any set had flare */}
+      {isSqlite && Object.values(setFlare).some((f) => f.detected) && (
+        <View style={styles.flareBanner}>
+          <Ionicons name="warning" size={16} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.flareBannerTitle}>Shoulder Flare Detected</Text>
+            <Text style={styles.flareBannerSub}>
+              {sets
+                .filter((st) => setFlare[st.id]?.detected)
+                .map((st) => {
+                  const dev = setFlare[st.id].maxDev;
+                  const dir = dev > 0 ? "Outwards" : "Inwards";
+                  return `${st.label?.trim() || `Set ${sets.indexOf(st) + 1}`} (${Math.abs(dev).toFixed(1)}° ${dir})`;
+                })
+                .join("  •  ")}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {loading ? (
         <View style={{ padding: 16, alignItems: "center" }}>
           <ActivityIndicator />
@@ -648,6 +688,7 @@ export default function SessionSetsScreen() {
           {/* Sets list */}
           {sets.map((st, idx) => {
             const displayName = st.label?.trim() || `Set ${idx + 1}`;
+            const flare = setFlare[st.id];
 
             return (
               <Card
@@ -692,6 +733,16 @@ export default function SessionSetsScreen() {
                     </View>
                   </View>
 
+                  {/* Shoulder flare alert */}
+                  {isSqlite && flare?.detected && (
+                    <View style={styles.flareAlert}>
+                      <Ionicons name="warning" size={14} color="#fff" />
+                      <Text style={styles.flareAlertText}>
+                        Shoulder flare ({Math.abs(flare.maxDev).toFixed(1)}° {flare.maxDev > 0 ? "Outwards" : "Inwards"})
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={{ marginTop: 10 }}>
                     <Text
                       variant="headlineSmall"
@@ -733,4 +784,26 @@ const styles = StyleSheet.create({
   legend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 10 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
+  flareAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#dc2626",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 10,
+    alignSelf: "flex-start",
+  },
+  flareAlertText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  flareBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#dc2626",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  flareBannerTitle: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  flareBannerSub: { color: "#fecaca", fontSize: 12, marginTop: 2 },
 });
