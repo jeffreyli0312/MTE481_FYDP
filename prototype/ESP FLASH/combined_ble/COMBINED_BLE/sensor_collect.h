@@ -8,10 +8,10 @@
 // =================================================================================
 // PIN / I2C CONFIGURATION
 // =================================================================================
-#define EMG_PIN_LEFT_TRICEP   34   // ADC pin – left tricep
-#define EMG_PIN_LEFT_PEC      35   // ADC pin – left pec
-#define EMG_PIN_RIGHT_TRICEP  32   // ADC pin – right tricep
-#define EMG_PIN_RIGHT_PEC     33   // ADC pin – right pec
+#define EMG_PIN_LEFT_TRICEP   33   // ADC pin – left tricep
+#define EMG_PIN_LEFT_PEC      32   // ADC pin – left pec
+#define EMG_PIN_RIGHT_TRICEP  35   // ADC pin – right tricep
+#define EMG_PIN_RIGHT_PEC     34   // ADC pin – right pec
 
 // AD0 values: 1 = default SparkFun breakout address (0x69)
 //             0 = ADR jumper closed           (0x68)
