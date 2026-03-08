@@ -46,7 +46,7 @@ export default function HomePageScreen() {
 
   const selectedExerciseId = selectedExercise?.id ?? "";
   const selectedExerciseName = selectedExercise?.name ?? "";
-  const savedSessionsForExercise = sessionsByExercise[selectedExerciseId] ?? [];
+  // const savedSessionsForExercise = sessionsByExercise[selectedExerciseId] ?? [];
 
   async function handleLogout() {
     try {
