@@ -1,17 +1,17 @@
 /**
- * main.cpp  (PlatformIO entry point)
+ * COMBINED_BLE.ino
  *
  * Collects synchronized EMG + IMU data and sends a 36-byte packed binary
  * WorkoutDataPacket_t over BLE (Nordic UART Service) at ~100 Hz.
  *
- * File layout:
- *   src/main.cpp          ← this file  (BLE setup + main loop)
- *   include/data_packet.h ← struct / union definition (36-byte layout)
- *   include/sensor_collect.h ← EMG + IMU read functions
+ * File layout (must all live in the COMBINED_BLE/ sketch folder):
+ *   COMBINED_BLE.ino   ← this file  (BLE setup + main loop)
+ *   data_packet.h      ← struct / union definition (36-byte layout)
+ *   sensor_collect.h   ← EMG + IMU read functions
  *
- * Required Libraries (platformio.ini lib_deps):
- *   - sparkfun/SparkFun ICM 20948 IMU Arduino Library
- *   - ESP32 BLE Arduino (bundled with espressif32 platform)
+ * Required Libraries (install via Arduino Library Manager):
+ *   - SparkFun ICM-20948 IMU Arduino Library
+ *   - ESP32 BLE Arduino (bundled with esp32 board package)
  *
  * Hardware:
  *   - ESP32 dev board
@@ -21,7 +21,6 @@
  *   - EMG sensors on ADC pins 34 (L_Tri), 35 (L_Pec), 32 (R_Tri), 33 (R_Pec)
  */
 
-#include <Arduino.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -54,6 +53,8 @@ bool  oldDeviceConnected = false;
 // The global packet buffer — mirrors tx_buffer in data_compile.c
 PacketBuffer_u tx_buffer;
 
+
+
 // =================================================================================
 // BLE Callbacks
 // =================================================================================
@@ -79,7 +80,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("=== COMBINED_BLE startup ===");
 
-    // 1. Initialize sensors (EMG pin prefill + IMUs over I2C)
+    // 1. Initialize sensors (EMG pin prefill + both IMUs over I2C)
     Sensors_Init();
 
     // 2. Initialize BLE
@@ -121,7 +122,7 @@ void setup() {
 // =================================================================================
 void loop() {
 
-    // --- Handle BLE reconnection ---
+    // --- Handle BLE reconnection (same pattern as IMU_BLE / EMG_BLE) ---
     if (!deviceConnected && oldDeviceConnected) {
         delay(500);
         pServer->getAdvertising()->start();
@@ -134,6 +135,7 @@ void loop() {
     }
 
     // --- Collect all sensor data into the packet buffer ---
+    //     Mirrors Collect_And_Send_Data() in data_compile.c
     Sensors_Collect(tx_buffer);
 
     // --- Send the 36-byte binary packet via BLE notify ---

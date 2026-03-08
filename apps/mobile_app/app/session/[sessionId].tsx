@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   SafeAreaView,
   View,
@@ -6,10 +6,14 @@ import {
   StyleSheet,
   Pressable,
   StatusBar,
+  Dimensions,
 } from "react-native";
 import { Card, Text, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LineChart } from "react-native-chart-kit";
+import { GestureDetector, Gesture } from "react-native-gesture-handler";
+import { useSharedValue, runOnJS } from "react-native-reanimated";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
 
@@ -17,7 +21,37 @@ import {
   initBleDb,
   listSets as listSqliteSets,
   listSamplesForSet,
+  listAllSamplesForSet,
 } from "../sqlite/bleDb";
+
+const screenWidth = Dimensions.get("window").width;
+const CHART_POINTS = 120;
+
+const LINE_COLORS: ((o: number) => string)[] = [
+  (o) => `rgba(59,130,246,${o})`,
+  (o) => `rgba(249,115,22,${o})`,
+  (o) => `rgba(34,197,94,${o})`,
+  (o) => `rgba(168,85,247,${o})`,
+  (o) => `rgba(239,68,68,${o})`,
+  (o) => `rgba(20,184,166,${o})`,
+  (o) => `rgba(234,179,8,${o})`,
+  (o) => `rgba(236,72,153,${o})`,
+];
+
+function resample(pts: { t: number; v: number }[], n: number, maxT: number): number[] {
+  if (pts.length === 0) return new Array(n).fill(0);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / (n - 1)) * maxT;
+    if (t <= pts[0].t) { out.push(pts[0].v); continue; }
+    if (t >= pts[pts.length - 1].t) { out.push(pts[pts.length - 1].v); continue; }
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].t <= t) lo = mid; else hi = mid; }
+    const r = (t - pts[lo].t) / (pts[hi].t - pts[lo].t + 1e-9);
+    out.push(pts[lo].v + r * (pts[hi].v - pts[lo].v));
+  }
+  return out;
+}
 
 type SupabaseSetRow = {
   id: string;
@@ -69,9 +103,10 @@ function formatDurationFromMs(ms: number) {
 export default function SessionSetsScreen() {
   const { colors, dark } = useAppTheme();
 
-  const { sessionId, source } = useLocalSearchParams<{
+  const { sessionId, source, title } = useLocalSearchParams<{
     sessionId: string;
     source?: string;
+    title?: string;
   }>();
 
   const isSqlite = source === "sqlite";
@@ -81,6 +116,17 @@ export default function SessionSetsScreen() {
 
   const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
+
+  // ── Graph state (SQLite only) ────────────────────────────────────────────
+  type SetLine = { label: string; data: number[] };
+  const [setLines, setSetLines] = useState<SetLine[]>([]);
+  const [maxDurationMs, setMaxDurationMs] = useState(0);
+  // IMU: one SetLine per gyro axis (gyrx, gyry, gyrz), each set averaged
+  const [imuLines, setImuLines] = useState<{ gyrx: SetLine[]; gyry: SetLine[]; gyrz: SetLine[] }>(
+    { gyrx: [], gyry: [], gyrz: [] }
+  );
+  const [imuMaxDurationMs, setImuMaxDurationMs] = useState(0);
+  // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +185,48 @@ export default function SessionSetsScreen() {
             setSets(mappedSets);
             setSetDuration(nextDur);
             setLoading(false);
+
+            // Build per-set overlay lines using emg_left_pec
+            const allSetLines: { label: string; pts: { t: number; v: number }[] }[] = [];
+            for (const st of sqliteSets) {
+              const smp = listAllSamplesForSet(st.id);
+              if (smp.length < 2) continue;
+              const t0 = smp[0].t_ms;
+              const pts = smp
+                .map((s) => ({ t: s.t_ms - t0, v: Number(s.emg_left_pec ?? 0) }))
+                .sort((a, b) => a.t - b.t);
+              allSetLines.push({ label: st.label ?? `Set ${allSetLines.length + 1}`, pts });
+            }
+            if (allSetLines.length >= 1) {
+              const maxT = Math.max(...allSetLines.map((s) => s.pts[s.pts.length - 1]?.t ?? 0));
+              setSetLines(
+                allSetLines.map((s) => ({
+                  label: s.label,
+                  data: resample(s.pts, CHART_POINTS, maxT),
+                }))
+              );
+              setMaxDurationMs(maxT);
+            }
+
+            // Build per-set IMU lines: l_roll, l_pitch, l_yaw
+            type AxisLines = { label: string; pts: { t: number; v: number }[] }[];
+            const rollLines: AxisLines = [], pitchLines: AxisLines = [], yawLines: AxisLines = [];
+            for (const st of sqliteSets) {
+              const smp = listAllSamplesForSet(st.id);
+              if (smp.length < 2) continue;
+              const t0 = smp[0].t_ms;
+              const label = st.label ?? `Set ${rollLines.length + 1}`;
+              rollLines.push({  label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_roll  ?? 0) })) });
+              pitchLines.push({ label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_pitch ?? 0) })) });
+              yawLines.push({   label, pts: smp.map((s) => ({ t: s.t_ms - t0, v: Number(s.l_yaw   ?? 0) })) });
+            }
+            if (rollLines.length >= 1) {
+              const imuMaxT = Math.max(...rollLines.map((s) => s.pts[s.pts.length - 1]?.t ?? 0));
+              const build = (lines: AxisLines) =>
+                lines.map((s) => ({ label: s.label, data: resample(s.pts, CHART_POINTS, imuMaxT) }));
+              setImuLines({ gyrx: build(rollLines), gyry: build(pitchLines), gyrz: build(yawLines) });
+              setImuMaxDurationMs(imuMaxT);
+            }
           }
 
           return;
@@ -218,6 +306,80 @@ export default function SessionSetsScreen() {
     };
   }, [sessionId, isSqlite]);
 
+  // ── Graph chart data (SQLite only) ──────────────────────────────────────
+  const chartData = useMemo(() => {
+    if (setLines.length === 0) return null;
+    const labelStep = Math.max(1, Math.floor(CHART_POINTS / 6));
+    const totalS = maxDurationMs / 1000;
+    const labels = Array.from({ length: CHART_POINTS }, (_, i) =>
+      i % labelStep === 0 ? ((i / (CHART_POINTS - 1)) * totalS).toFixed(1) + "s" : ""
+    );
+    const datasets = setLines.slice(0, LINE_COLORS.length).map((line, idx) => ({
+      data: line.data,
+      color: LINE_COLORS[idx % LINE_COLORS.length],
+      strokeWidth: 2,
+    }));
+    return { labels, datasets };
+  }, [setLines, maxDurationMs]);
+
+  const chartConfig = useMemo(() => ({
+    backgroundGradientFrom: colors.surface,
+    backgroundGradientTo: colors.surface,
+    decimalPlaces: 0,
+    color: (opacity = 1) => dark ? `rgba(255,255,255,${opacity})` : `rgba(0,0,0,${opacity})`,
+    labelColor: (opacity = 1) => dark ? `rgba(156,163,175,${opacity})` : `rgba(107,114,128,${opacity})`,
+    propsForBackgroundLines: { strokeDasharray: "4 6", stroke: dark ? "#374151" : "#e5e7eb" },
+    propsForDots: { r: "0" },
+    useShadowColorFromDataset: true,
+  }), [dark, colors.surface]);
+  // ────────────────────────────────────────────────────────────────────────
+
+  // ── Pinch-to-zoom (EMG) ──────────────────────────────────────
+  const BASE_WIDTH = screenWidth - 48;
+  const [zoomScale, setZoomScale] = useState(1);
+  const savedScale = useSharedValue(1);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      const next = Math.min(Math.max(savedScale.value * e.scale, 1), 10);
+      runOnJS(setZoomScale)(next);
+    })
+    .onEnd(() => { savedScale.value = zoomScale; });
+
+  // ── Pinch-to-zoom (IMU) ──────────────────────────────────────
+  const [imuZoomScale, setImuZoomScale] = useState(1);
+  const imuSavedScale = useSharedValue(1);
+
+  const imuPinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      const next = Math.min(Math.max(imuSavedScale.value * e.scale, 1), 10);
+      runOnJS(setImuZoomScale)(next);
+    })
+    .onEnd(() => { imuSavedScale.value = imuZoomScale; });
+
+  // ── IMU chart data ───────────────────────────────────────────
+  const imuChartData = useMemo(() => {
+    if (imuLines.gyrx.length === 0) return null;
+    const labelStep = Math.max(1, Math.floor(CHART_POINTS / 6));
+    const totalS = imuMaxDurationMs / 1000;
+    const labels = Array.from({ length: CHART_POINTS }, (_, i) =>
+      i % labelStep === 0 ? ((i / (CHART_POINTS - 1)) * totalS).toFixed(1) + "s" : ""
+    );
+    // For each set, add gyrx (blue), gyry (orange), gyrz (green)
+    const datasets: { data: number[]; color: (o: number) => string; strokeWidth: number }[] = [];
+    const n = Math.min(imuLines.gyrx.length, 3); // cap at 3 sets for clarity
+    for (let i = 0; i < n; i++) {
+      const alpha = 1 - i * 0.25; // fade older sets slightly
+      datasets.push(
+        { data: imuLines.gyrx[i].data, color: (o) => `rgba(59,130,246,${o * alpha})`,  strokeWidth: 2 },
+        { data: imuLines.gyry[i].data, color: (o) => `rgba(249,115,22,${o * alpha})`, strokeWidth: 2 },
+        { data: imuLines.gyrz[i].data, color: (o) => `rgba(34,197,94,${o * alpha})`,  strokeWidth: 2 }
+      );
+    }
+    return { labels, datasets };
+  }, [imuLines, imuMaxDurationMs]);
+  // ──────────────────────────────────────────────────────────────
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
@@ -239,7 +401,7 @@ export default function SessionSetsScreen() {
           variant="headlineSmall"
           style={{ color: colors.onSurface, marginTop: 8 }}
         >
-          Sets
+          {title ?? "Session"}
         </Text>
         <Text
           variant="bodySmall"
@@ -285,6 +447,99 @@ export default function SessionSetsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+          {/* Overlay graph – SQLite sessions only */}
+          {isSqlite && chartData && (
+            <Card style={styles.chartCard} mode="outlined">
+              <Card.Content>
+                <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                  Left Pectoral EMG
+                </Text>
+
+                {/* Legend */}
+                <View style={styles.legend}>
+                  {setLines.slice(0, LINE_COLORS.length).map((line, idx) => (
+                    <View key={idx} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: LINE_COLORS[idx](1) }]} />
+                      <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                        {line.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                <GestureDetector gesture={pinchGesture}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <LineChart
+                      data={chartData}
+                      width={Math.max(BASE_WIDTH, BASE_WIDTH * zoomScale)}
+                      height={200}
+                      withDots={false}
+                      withShadow={false}
+                      withInnerLines
+                      withOuterLines={false}
+                      renderDotContent={() => null}
+                      chartConfig={chartConfig}
+                      style={{ borderRadius: 10 }}
+                    />
+                  </ScrollView>
+                </GestureDetector>
+
+                <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 4 }}>
+                  Time
+                </Text>
+              </Card.Content>
+            </Card>
+          )}
+
+          {/* Left IMU – Gyroscope */}
+          {isSqlite && imuChartData && (
+            <Card style={styles.chartCard} mode="outlined">
+              <Card.Content>
+                <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                  Left IMU – Gyroscope
+                </Text>
+
+                {/* Axis legend */}
+                <View style={styles.legend}>
+                  {[
+                    { label: "Roll",  color: "rgba(59,130,246,1)" },
+                    { label: "Pitch", color: "rgba(249,115,22,1)" },
+                    { label: "Yaw",   color: "rgba(34,197,94,1)" },
+                  ].map((item) => (
+                    <View key={item.label} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                      <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                        {item.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                <GestureDetector gesture={imuPinchGesture}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <LineChart
+                      data={imuChartData}
+                      width={Math.max(BASE_WIDTH, BASE_WIDTH * imuZoomScale)}
+                      height={200}
+                      withDots={false}
+                      withShadow={false}
+                      withInnerLines
+                      withOuterLines={false}
+                      renderDotContent={() => null}
+                      chartConfig={chartConfig}
+                      style={{ borderRadius: 10 }}
+                    />
+                  </ScrollView>
+                </GestureDetector>
+
+                <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 4 }}>
+                  Time
+                </Text>
+              </Card.Content>
+            </Card>
+          )}
+
+          {/* Sets list */}
           {sets.map((st, idx) => {
             const displayName = st.label?.trim() || `Set ${idx + 1}`;
 
@@ -364,4 +619,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   inlineRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  chartCard: { borderRadius: 14, marginBottom: 20, overflow: "hidden" },
+  legend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
 });
