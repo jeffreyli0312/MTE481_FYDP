@@ -39,3 +39,49 @@ export function formatDurationFromMs(ms: number) {
   const s = totalSec % 60;
   return `${m}m ${s}s`;
 }
+
+/**
+ * Streaming moving average filter.
+ * Maintains an internal circular buffer; call `push(value)` for each new
+ * sample and it returns the current windowed average.
+ */
+export class MovingAverage {
+  private buf: number[];
+  private sum = 0;
+  private idx = 0;
+  private count = 0;
+  readonly windowSize: number;
+
+  constructor(windowSize: number) {
+    this.windowSize = Math.max(1, windowSize);
+    this.buf = new Array(this.windowSize).fill(0);
+  }
+
+  push(value: number): number {
+    if (this.count >= this.windowSize) {
+      this.sum -= this.buf[this.idx];
+    }
+    this.buf[this.idx] = value;
+    this.sum += value;
+    this.idx = (this.idx + 1) % this.windowSize;
+    this.count = Math.min(this.count + 1, this.windowSize);
+    return this.sum / this.count;
+  }
+
+  reset() {
+    this.buf.fill(0);
+    this.sum = 0;
+    this.idx = 0;
+    this.count = 0;
+  }
+}
+
+/** Apply a moving average to an array of {time, value} points (batch/offline). */
+export function movingAverageSmooth(
+  points: { time: number; value: number }[],
+  windowSize: number,
+): { time: number; value: number }[] {
+  if (points.length === 0 || windowSize <= 1) return points;
+  const ma = new MovingAverage(windowSize);
+  return points.map((p) => ({ time: p.time, value: ma.push(p.value) }));
+}

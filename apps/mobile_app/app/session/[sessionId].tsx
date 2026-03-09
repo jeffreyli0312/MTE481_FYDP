@@ -23,8 +23,10 @@ import {
   listSamplesForSet,
   listAllSamplesForSet,
   getLatestCalibration,
+  getBaselineOffsets,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
+import { movingAverageSmooth } from "../utils/format";
 
 const screenWidth = Dimensions.get("window").width;
 const CHART_POINTS = 120;
@@ -291,14 +293,16 @@ export default function SessionSetsScreen() {
               const smp = listAllSamplesForSet(st.id);
               if (smp.length < 2) continue;
               const t0 = smp[0].t_ms;
+              const bl = getBaselineOffsets(st.id);
               const label = st.label ?? `Set ${ltriLines.length + 1}`;
               const toEnv = (key: "emg_left_tricep" | "emg_left_pec" | "emg_right_tricep" | "emg_right_pec") => {
                 const raw: Point[] = smp.map((s) => {
-                  const v = Number((s as any)[key] ?? 0);
+                  const v = Math.max(0, Number((s as any)[key] ?? 0) - bl[key]);
                   return { time: s.t_ms - t0, value: mvc > 0 ? (v / mvc) * 100 : v };
                 });
-                const env = rmsEnvelope(downsampleMinMax(raw, DOWNSAMPLE_MAX), 25);
-                return trimLeadingBaseline(env).map((p) => ({ t: p.time, v: p.value }));
+                const smoothed = movingAverageSmooth(raw, 10);
+                const env = rmsEnvelope(smoothed, 25);
+                return trimLeadingBaseline(downsampleMinMax(env, DOWNSAMPLE_MAX)).map((p) => ({ t: p.time, v: p.value }));
               };
               ltriLines.push({ label, pts: toEnv("emg_left_tricep")  });
               lpecLines.push({ label, pts: toEnv("emg_left_pec")     });
@@ -323,8 +327,9 @@ export default function SessionSetsScreen() {
               const label = st.label ?? `Set ${rollLines.length + 1}`;
               const toSmooth = (key: "l_roll" | "l_pitch" | "l_yaw") => {
                 const raw: Point[] = smp.map((s) => ({ time: s.t_ms - t0, value: Number((s as any)[key] ?? 0) }));
-                const sm = emaSmooth(downsampleMinMax(raw, DOWNSAMPLE_MAX), 0.25);
-                return trimLeadingBaseline(sm).map((p) => ({ t: p.time, v: p.value }));
+                const smoothed = movingAverageSmooth(raw, 10);
+                const sm = emaSmooth(smoothed, 0.25);
+                return trimLeadingBaseline(downsampleMinMax(sm, DOWNSAMPLE_MAX)).map((p) => ({ t: p.time, v: p.value }));
               };
               rollLines.push({  label, pts: toSmooth("l_roll")  });
               pitchLines.push({ label, pts: toSmooth("l_pitch") });
