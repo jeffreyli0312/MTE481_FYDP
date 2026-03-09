@@ -20,6 +20,7 @@ import {
   getLatestCalibration,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
+import { movingAverageSmooth, emaSmooth } from "../utils/format";
 
 const FLARE_THRESHOLD = 15; // degrees
 
@@ -88,7 +89,7 @@ export default function SessionSetsScreen() {
 
   const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
-  const [setFlare, setSetFlare] = useState<Record<string, { detected: boolean; maxDev: number }>>({});
+  const [setFlare, setSetFlare] = useState<Record<string, { detected: boolean; maxDev: number; baselineYaw: number; absoluteMaxDevYaw: number }>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -119,26 +120,39 @@ export default function SessionSetsScreen() {
           }));
 
           const nextDur: Record<string, string> = {};
-          const nextFlare: Record<string, { detected: boolean; maxDev: number }> = {};
+          const nextFlare: Record<string, { detected: boolean; maxDev: number; baselineYaw: number; absoluteMaxDevYaw: number }> = {};
 
           for (const st of sqliteSets) {
             const samples = listSamplesForSet(st.id, 1000);
 
             if (samples.length === 0) {
               nextDur[st.id] = "\u2014";
-              nextFlare[st.id] = { detected: false, maxDev: 0 };
+              nextFlare[st.id] = { detected: false, maxDev: 0, baselineYaw: 0, absoluteMaxDevYaw: 0 };
               continue;
             }
 
             let minReceivedAt: number | null = null;
             let maxReceivedAt: number | null = null;
 
-            const baselineYaw = Number(samples[0].l_yaw ?? 0);
-            let maxYawDev = 0;
+            // Extract valid l_yaw points and apply smoothing
+            const rawYawPoints = samples
+              .filter((s) => s.l_yaw != null && s.received_at != null)
+              .map((s) => ({ time: s.received_at!, value: Number(s.l_yaw) }));
+            
+            const smoothedYawPoints = emaSmooth(movingAverageSmooth(rawYawPoints, 10), 0.25);
 
-            for (const smp of samples) {
-              const receivedAt = smp.received_at ?? null;
-              if (receivedAt == null) continue;
+            // Shoulder flare: baseline yaw is the average of the first 3 seconds (up to 300 samples at ~100Hz)
+            const BASELINE_SAMPLES_COUNT = Math.min(300, smoothedYawPoints.length);
+            const baselineSubset = smoothedYawPoints.slice(0, BASELINE_SAMPLES_COUNT);
+            const baselineYaw = baselineSubset.length > 0 
+                ? baselineSubset.reduce((sum, s) => sum + s.value, 0) / baselineSubset.length
+                : 0;
+
+            let maxYawDev = 0;
+            let absoluteMaxDevYaw = 0;
+
+            for (const smp of smoothedYawPoints) {
+              const receivedAt = smp.time;
 
               if (minReceivedAt == null || receivedAt < minReceivedAt) {
                 minReceivedAt = receivedAt;
@@ -147,12 +161,13 @@ export default function SessionSetsScreen() {
                 maxReceivedAt = receivedAt;
               }
 
-              let rawDev = Number(smp.l_yaw ?? 0) - baselineYaw;
+              let rawDev = smp.value - baselineYaw;
               if (rawDev > 180) rawDev -= 360;
               if (rawDev < -180) rawDev += 360;
 
               if (Math.abs(rawDev) > Math.abs(maxYawDev)) {
                 maxYawDev = rawDev;
+                absoluteMaxDevYaw = smp.value;
               }
             }
 
@@ -161,7 +176,12 @@ export default function SessionSetsScreen() {
                 ? formatDurationFromMs(maxReceivedAt - minReceivedAt)
                 : "\u2014";
 
-            nextFlare[st.id] = { detected: Math.abs(maxYawDev) > FLARE_THRESHOLD, maxDev: maxYawDev };
+            nextFlare[st.id] = { 
+              detected: Math.abs(maxYawDev) > FLARE_THRESHOLD, 
+              maxDev: maxYawDev,
+              baselineYaw: baselineYaw,
+              absoluteMaxDevYaw: absoluteMaxDevYaw
+            };
           }
 
           if (!cancelled) {
@@ -386,10 +406,15 @@ export default function SessionSetsScreen() {
 
                   {/* Shoulder flare alert */}
                   {isSqlite && flare?.detected && (
-                    <View style={styles.flareAlert}>
-                      <Ionicons name="warning" size={14} color="#fff" />
-                      <Text style={styles.flareAlertText}>
-                        Shoulder flare ({Math.abs(flare.maxDev).toFixed(1)}\u00B0 {flare.maxDev > 0 ? "Outwards" : "Inwards"})
+                    <View style={[styles.flareAlert, { flexDirection: "column", alignItems: "flex-start", paddingVertical: 8 }]}>
+                      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
+                        <Ionicons name="warning" size={14} color="#fff" style={{ marginRight: 6 }} />
+                        <Text style={styles.flareAlertText}>
+                          Shoulder flare ({Math.abs(flare.maxDev).toFixed(1)}° {flare.maxDev > 0 ? "Outwards" : "Inwards"})
+                        </Text>
+                      </View>
+                      <Text style={[styles.flareAlertText, { fontSize: 11, opacity: 0.9, marginLeft: 20 }]}>
+                        Baseline: {flare.baselineYaw.toFixed(1)}° → Max: {flare.absoluteMaxDevYaw.toFixed(1)}°
                       </Text>
                     </View>
                   )}
