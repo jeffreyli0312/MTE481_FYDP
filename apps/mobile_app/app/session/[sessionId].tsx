@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  SafeAreaView,
   View,
   ScrollView,
   StyleSheet,
@@ -8,8 +7,9 @@ import {
   StatusBar,
   Dimensions,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, ActivityIndicator } from "react-native-paper";
-import { useLocalSearchParams, router } from "expo-router";
+import { useLocalSearchParams, router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LineChart } from "react-native-chart-kit";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
@@ -514,7 +514,8 @@ export default function SessionSetsScreen() {
   // ──────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+      <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
       <View
@@ -565,7 +566,7 @@ export default function SessionSetsScreen() {
       )}
 
       {loading ? (
-        <View style={{ padding: 16, alignItems: "center" }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 16, alignItems: "center" }}>
           <ActivityIndicator />
           <Text
             variant="bodySmall"
@@ -575,7 +576,7 @@ export default function SessionSetsScreen() {
           </Text>
         </View>
       ) : errorMsg ? (
-        <View style={{ padding: 16 }}>
+        <View style={{ padding: 20 }}>
           <Text variant="titleSmall" style={{ color: colors.onSurface }}>
             Couldn't load sets
           </Text>
@@ -587,7 +588,7 @@ export default function SessionSetsScreen() {
           </Text>
         </View>
       ) : sets.length === 0 ? (
-        <View style={{ padding: 16 }}>
+        <View style={{ padding: 20 }}>
           <Text variant="titleSmall" style={{ color: colors.onSurface }}>
             No sets found
           </Text>
@@ -599,7 +600,7 @@ export default function SessionSetsScreen() {
           </Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}>
           {/* Overlay graph – SQLite sessions only */}
           {isSqlite && chartData && (
             <Card style={styles.chartCard} mode="outlined">
@@ -773,7 +774,7 @@ export default function SessionSetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  header: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1 },
   backRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   card: {
     borderRadius: 16,

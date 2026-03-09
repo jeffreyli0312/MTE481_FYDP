@@ -45,6 +45,7 @@ export default function SessionView({
   const userId = user?.id ?? "anonymous";
   const sessionIdRef = useRef(`sess_${Date.now()}`);
   const currentSetIdRef = useRef<string | null>(null);
+  const sessionInsertedRef = useRef(false); // true once insertSession has run
   const [sampleCount, setSampleCount] = useState(0);
 
   const [sessionSeconds, setSessionSeconds] = useState(0);
@@ -79,13 +80,8 @@ export default function SessionView({
   const upperThreshold = mvcValue * 0.50;
   const lowerThreshold = mvcValue * 0.20;
 
-  // Create a DB session row when the view mounts
+  // Load calibration on mount — session row is NOT inserted until first set starts
   useEffect(() => {
-    insertSession({
-      sessionId: sessionIdRef.current,
-      userId,
-      deviceId: ble.connectedDevice?.id ?? undefined,
-    });
     const cal = getLatestCalibration(userId, exerciseName);
     setCalibration(cal);
   }, []);
@@ -110,7 +106,10 @@ export default function SessionView({
     setSessionTimerRunning(false);
     if (baselineTimerRef.current) clearInterval(baselineTimerRef.current);
     await ble.reset();
-    dbEndSession(sessionIdRef.current);
+    // Only end the session in the DB if it was actually created
+    if (sessionInsertedRef.current) {
+      dbEndSession(sessionIdRef.current);
+    }
     onBack();
   }
 
@@ -120,6 +119,16 @@ export default function SessionView({
   function startRecording() {
     const setId = `set_${Date.now()}`;
     currentSetIdRef.current = setId;
+
+    // Lazily create the session row the first time a set is started
+    if (!sessionInsertedRef.current) {
+      insertSession({
+        sessionId: sessionIdRef.current,
+        userId,
+        deviceId: ble.connectedDevice?.id ?? undefined,
+      });
+      sessionInsertedRef.current = true;
+    }
 
     insertSet({
       setId,

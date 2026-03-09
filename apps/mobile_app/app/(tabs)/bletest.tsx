@@ -2,13 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Alert,
   Platform,
   PermissionsAndroid,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button, ActivityIndicator, Badge } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import {
@@ -280,10 +280,10 @@ export default function BLETestScreen() {
   const isReady = bluetoothState === State.PoweredOn;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={["top"]} style={[styles.safe, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text variant="titleLarge" style={[styles.pageTitle, { color: colors.onSurface }]}>
+      <Text variant="titleLarge" style={[styles.pageTitle, { color: colors.onSurface, fontWeight: "bold" }]}>
         BLE
       </Text>
 
@@ -486,11 +486,11 @@ export default function BLETestScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   pageTitle: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   scroll: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 24,
   },
   card: {

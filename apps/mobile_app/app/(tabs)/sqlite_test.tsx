@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, View, StyleSheet, Alert, TextInput as RNTextInput } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Text,
   Card,
@@ -163,7 +164,7 @@ export default function DatabaseViewer() {
   }
 
   return (
-    <>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.container}
@@ -468,19 +469,19 @@ export default function DatabaseViewer() {
           </View>
         </Modal>
       </Portal>
-    </>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
     gap: 4,
   },
   toolbar: {
