@@ -1043,58 +1043,6 @@ export default function SetAnalyticsScreen() {
               >
                 Time (s)
               </Text>
-
-              {/* Max/Min Yaw Display */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-around",
-                  marginTop: 16,
-                }}
-              >
-                <View style={{ alignItems: "center" }}>
-                  <Text
-                    variant="labelSmall"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    Baseline Yaw
-                  </Text>
-                  <Text
-                    variant="titleLarge"
-                    style={{ color: colors.onSurface, fontWeight: "700" }}
-                  >
-                    {baselineYaw.toFixed(1)}°
-                  </Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text
-                    variant="labelSmall"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    Min Yaw
-                  </Text>
-                  <Text
-                    variant="titleLarge"
-                    style={{ color: colors.onSurface, fontWeight: "700" }}
-                  >
-                    {minYaw.toFixed(1)}°
-                  </Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text
-                    variant="labelSmall"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    Max Yaw
-                  </Text>
-                  <Text
-                    variant="titleLarge"
-                    style={{ color: colors.onSurface, fontWeight: "700" }}
-                  >
-                    {maxYaw.toFixed(1)}°
-                  </Text>
-                </View>
-              </View>
             </Card.Content>
           </Card>
         )}
