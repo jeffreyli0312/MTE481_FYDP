@@ -8,9 +8,9 @@ import {
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
+import { Card, Text, Button, ActivityIndicator, DataTable } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { LineChart } from "react-native-chart-kit";
+import { LineChart, BarChart } from "react-native-chart-kit";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
@@ -20,6 +20,8 @@ import {
   listSamplesForSet,
   getLatestCalibration,
   getBaselineOffsets,
+  listRepsForSet,
+  type RepRow,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth } from "../utils/format";
@@ -176,6 +178,7 @@ export default function SetAnalyticsScreen() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [samples, setSamples] = useState<SampleRow[]>([]);
+  const [reps, setReps] = useState<RepRow[]>([]);
   const [duration, setDuration] = useState("0m 0s");
   const [emgChannelSeries, setEmgChannelSeries] = useState<Record<EmgChannelKey, Point[]>>({
     emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [],
@@ -271,8 +274,11 @@ export default function SetAnalyticsScreen() {
             ? lastTime - firstTime
             : 0;
 
+        const repRows = listRepsForSet(setId);
+
         if (!cancelled) {
           setSamples(rows);
+          setReps(repRows);
           setEmgChannelSeries(perChannel);
           setImuAxisSeries(perImu);
           setDuration(formatDurationFromMs(durMs));
@@ -502,6 +508,47 @@ export default function SetAnalyticsScreen() {
 
   const consistencyLabel = consistency > 80 ? "Excellent" : consistency > 60 ? "Good" : "Needs Work";
 
+  // --- Per-rep derived metrics ---
+
+  const avgRepTime = useMemo(() => {
+    const valid = reps.filter((r) => r.end_ms != null);
+    if (valid.length === 0) return 0;
+    const total = valid.reduce((s, r) => s + (r.end_ms! - r.start_ms), 0);
+    return total / valid.length;
+  }, [reps]);
+
+  const avgRestTime = useMemo(() => {
+    const valid = reps.filter((r) => r.end_ms != null);
+    if (valid.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < valid.length; i++) {
+      total += valid[i].start_ms - valid[i - 1].end_ms!;
+    }
+    return total / (valid.length - 1);
+  }, [reps]);
+
+  const fatigueIndex = useMemo(() => {
+    const valid = reps.filter((r) => r.peak_emg != null && r.peak_emg > 0);
+    if (valid.length < 2) return null;
+    const first = valid[0].peak_emg!;
+    const last = valid[valid.length - 1].peak_emg!;
+    return Math.round(((first - last) / first) * 100);
+  }, [reps]);
+
+  const maxFlare = useMemo(() => {
+    const yawKey: ImuAxisKey = selectedImuSide === "left" ? "l_yaw" : "r_yaw";
+    const series = imuAxisSeries[yawKey];
+    if (series.length === 0) return 0;
+    let mx = 0;
+    for (const p of series) {
+      const abs = Math.abs(p.value);
+      if (abs > mx) mx = abs;
+    }
+    return Math.round(mx * 10) / 10;
+  }, [imuAxisSeries, selectedImuSide]);
+
+  const FLARE_THRESHOLD = 15;
+
   const chartConfig = useMemo(
     () => ({
       backgroundGradientFrom: colors.surface,
@@ -597,9 +644,26 @@ export default function SetAnalyticsScreen() {
         {/* Overview Cards */}
         <View style={styles.statsGrid}>
           <StatCard title="Duration" value={duration} />
-          <StatCard title="Channel" value={emgChannelLabel} />
-          <StatCard title="Avg EMG" value={avgEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
-          <StatCard title="Peak EMG" value={maxEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard title="Reps" value={reps.length > 0 ? String(reps.length) : "--"} />
+          <StatCard title="Avg Rep Time" value={avgRepTime > 0 ? `${(avgRepTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg Rest Time" value={avgRestTime > 0 ? `${(avgRestTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg EMG" value={avgEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard title="Peak EMG" value={maxEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard
+            title="Fatigue"
+            value={fatigueIndex != null ? `${fatigueIndex}%` : "--"}
+            color={
+              fatigueIndex == null ? undefined
+                : fatigueIndex > 40 ? "#ef4444"
+                : fatigueIndex > 20 ? "#f59e0b"
+                : "#22c55e"
+            }
+          />
+          <StatCard
+            title="Max Flare"
+            value={`${maxFlare}\u00B0`}
+            color={maxFlare > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
+          />
         </View>
 
         {/* Chart type selector */}
@@ -789,6 +853,82 @@ export default function SetAnalyticsScreen() {
           </Card>
         )}
 
+        {/* Per-rep bar chart */}
+        {reps.length >= 2 && (
+          <Card style={styles.chartCard} mode="outlined">
+            <Card.Content>
+              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                Peak EMG Per Rep
+              </Text>
+              <BarChart
+                data={{
+                  labels: reps.map((r) => `${r.rep_number}`),
+                  datasets: [{
+                    data: reps.map((r) => r.peak_emg ?? 0),
+                  }],
+                }}
+                width={baseWidth - 32}
+                height={180}
+                fromZero
+                showValuesOnTopOfBars
+                withInnerLines={false}
+                yAxisSuffix={mvcValue > 0 ? "%" : ""}
+                yAxisLabel=""
+                chartConfig={{
+                  ...chartConfig,
+                  barPercentage: 0.6,
+                  decimalPlaces: 0,
+                }}
+                style={{ borderRadius: 12 }}
+              />
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Rep #
+              </Text>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Per-rep breakdown table */}
+        {reps.length > 0 && (
+          <Card style={{ borderRadius: 12, marginTop: 16 }} mode="outlined">
+            <Card.Content>
+              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                Rep Breakdown
+              </Text>
+              <DataTable>
+                <DataTable.Header>
+                  <DataTable.Title style={{ flex: 0.5 }}>#</DataTable.Title>
+                  <DataTable.Title numeric>Duration</DataTable.Title>
+                  <DataTable.Title numeric>Peak</DataTable.Title>
+                  <DataTable.Title numeric>Mean</DataTable.Title>
+                </DataTable.Header>
+                {reps.map((r) => {
+                  const dur = r.end_ms != null ? r.end_ms - r.start_ms : null;
+                  return (
+                    <DataTable.Row key={r.id}>
+                      <DataTable.Cell style={{ flex: 0.5 }}>{r.rep_number}</DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {dur != null ? `${(dur / 1000).toFixed(1)}s` : "--"}
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {r.peak_emg != null ? r.peak_emg.toFixed(1) : "--"}
+                        {r.peak_emg != null && mvcValue > 0 ? "%" : ""}
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {r.mean_emg != null ? r.mean_emg.toFixed(1) : "--"}
+                        {r.mean_emg != null && mvcValue > 0 ? "%" : ""}
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  );
+                })}
+              </DataTable>
+            </Card.Content>
+          </Card>
+        )}
+
         {/* Consistency */}
         <Card style={styles.consistencyCard}>
           <Card.Content>
@@ -861,10 +1001,12 @@ function StatCard({
   title,
   value,
   unit,
+  color,
 }: {
   title: string;
   value: string;
   unit?: string;
+  color?: string;
 }) {
   const { colors } = useAppTheme();
   return (
@@ -873,7 +1015,7 @@ function StatCard({
         <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
           {title}
         </Text>
-        <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "800", marginTop: 6 }}>
+        <Text variant="titleLarge" style={{ color: color ?? colors.onSurface, fontWeight: "800", marginTop: 6 }}>
           {value}
           {unit ? (
             <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
