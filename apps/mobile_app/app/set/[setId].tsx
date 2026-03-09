@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  SafeAreaView,
   View,
   ScrollView,
   StyleSheet,
@@ -8,9 +7,10 @@ import {
   Pressable,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
-import { useLocalSearchParams, router } from "expo-router";
-import { LineChart } from "react-native-chart-kit";
+import { useLocalSearchParams, router, Stack } from "expo-router";
+import { LineChart, BarChart } from "react-native-chart-kit";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -427,7 +427,8 @@ export default function SetAnalyticsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={["top"]} style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 20 }]}>
+        <Stack.Screen options={{ headerShown: false }} />
         <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
         <ActivityIndicator />
         <Text variant="bodySmall" style={{ marginTop: 10, color: colors.onSurfaceVariant }}>
@@ -439,7 +440,8 @@ export default function SetAnalyticsScreen() {
 
   if (err) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}>
+      <SafeAreaView edges={["top"]} style={[styles.center, { backgroundColor: colors.background, paddingHorizontal: 20 }]}>
+        <Stack.Screen options={{ headerShown: false }} />
         <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
         <Text variant="titleSmall" style={{ color: colors.onSurface }}>
           Couldn't load
@@ -455,7 +457,8 @@ export default function SetAnalyticsScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
+      <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
       {/* Header */}
@@ -492,7 +495,7 @@ export default function SetAnalyticsScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}>
         {/* Overview Cards */}
         <View style={styles.statsGrid}>
           <StatCard title="Duration" value={duration} />
@@ -746,7 +749,7 @@ function Bullet({ text, color }: { text: string; color: string }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 16 },
-  header: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
+  header: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1 },
   backRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   headerRow: {
     marginTop: 10,

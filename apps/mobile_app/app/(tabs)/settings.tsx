@@ -1,4 +1,5 @@
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, StatusBar } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Text, Switch, Divider } from "react-native-paper";
 import { useTheme } from "../context/ThemeContext";
 import { useDevMode } from "../context/DevModeContext";
@@ -12,8 +13,8 @@ export default function SettingsScreen() {
   const isDark = theme === "dark";
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text variant="titleLarge" style={{ color: colors.onSurface }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 }}>
+      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "bold" }}>
         Settings
       </Text>
 
@@ -37,7 +38,7 @@ export default function SettingsScreen() {
         </View>
         <Switch value={devMode} onValueChange={toggleDevMode} color={colors.primary} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -51,6 +52,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
 });

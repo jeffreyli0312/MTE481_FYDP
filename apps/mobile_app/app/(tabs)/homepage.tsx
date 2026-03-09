@@ -2,10 +2,10 @@ import React, { useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -87,9 +87,9 @@ export default function HomePageScreen() {
   // ─── Exercise page (overview or active session) ───
   if (screenMode === "exercise") {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
         <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 28 }}>
           {exerciseMode === "session" ? (
             <SessionView
               exerciseName={selectedExerciseName}
@@ -110,10 +110,10 @@ export default function HomePageScreen() {
 
   // ─── Home screen ───
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text variant="titleLarge" style={{ color: colors.onSurface, padding: 12 }}>
+      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "bold", paddingBottom: 12, paddingHorizontal: 20 }}>
         Home
       </Text>
 
@@ -213,16 +213,14 @@ export default function HomePageScreen() {
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 24,
-    paddingTop: 8,
   },
   headerContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 12,
-    paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 16,
   },

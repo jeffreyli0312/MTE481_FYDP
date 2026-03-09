@@ -1,13 +1,13 @@
 import React, { useCallback, useState } from "react";
 import { router } from "expo-router";
 import {
-  SafeAreaView,
   ScrollView,
   View,
   StyleSheet,
   StatusBar,
   RefreshControl,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "react-native-paper";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
@@ -30,10 +30,10 @@ export default function HistoryScreen() {
   }, [local]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text variant="titleLarge" style={{ color: colors.onSurface, padding: 12 }}>
+      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "bold", paddingBottom: 12, paddingHorizontal: 20 }}>
         History
       </Text>
 
@@ -83,14 +83,12 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 24,
-    paddingTop: 8,
   },
 });
