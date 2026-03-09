@@ -496,18 +496,6 @@ export default function SetAnalyticsScreen() {
     return mx;
   }, [channelValues]);
 
-  const consistency = useMemo(() => {
-    if (channelValues.length < 2) return 0;
-    const mean = channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
-    if (mean === 0) return 0;
-    const variance = channelValues.reduce((s, v) => s + (v - mean) ** 2, 0) / channelValues.length;
-    const cv = (Math.sqrt(variance) / mean) * 100;
-    const score = Math.max(0, Math.min(100, Math.round(100 - cv)));
-    return score;
-  }, [channelValues]);
-
-  const consistencyLabel = consistency > 80 ? "Excellent" : consistency > 60 ? "Good" : "Needs Work";
-
   // --- Per-rep derived metrics ---
 
   const avgRepTime = useMemo(() => {
@@ -641,31 +629,6 @@ export default function SetAnalyticsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}>
-        {/* Overview Cards */}
-        <View style={styles.statsGrid}>
-          <StatCard title="Duration" value={duration} />
-          <StatCard title="Reps" value={reps.length > 0 ? String(reps.length) : "--"} />
-          <StatCard title="Avg Rep Time" value={avgRepTime > 0 ? `${(avgRepTime / 1000).toFixed(1)}s` : "--"} />
-          <StatCard title="Avg Rest Time" value={avgRestTime > 0 ? `${(avgRestTime / 1000).toFixed(1)}s` : "--"} />
-          <StatCard title="Avg EMG" value={avgEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
-          <StatCard title="Peak EMG" value={maxEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
-          <StatCard
-            title="Fatigue"
-            value={fatigueIndex != null ? `${fatigueIndex}%` : "--"}
-            color={
-              fatigueIndex == null ? undefined
-                : fatigueIndex > 40 ? "#ef4444"
-                : fatigueIndex > 20 ? "#f59e0b"
-                : "#22c55e"
-            }
-          />
-          <StatCard
-            title="Max Flare"
-            value={`${maxFlare}\u00B0`}
-            color={maxFlare > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
-          />
-        </View>
-
         {/* Chart type selector */}
         <Card style={styles.segment} mode="outlined">
           <Card.Content style={styles.segmentContent}>
@@ -853,6 +816,31 @@ export default function SetAnalyticsScreen() {
           </Card>
         )}
 
+        {/* Overview Cards */}
+        <View style={[styles.statsGrid, { marginTop: 16 }]}>
+          <StatCard title="Duration" value={duration} />
+          <StatCard title="Reps" value={reps.length > 0 ? String(reps.length) : "--"} />
+          <StatCard title="Avg Rep Time" value={avgRepTime > 0 ? `${(avgRepTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg Rest Time" value={avgRestTime > 0 ? `${(avgRestTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg EMG" value={avgEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard title="Peak EMG" value={maxEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard
+            title="Fatigue"
+            value={fatigueIndex != null ? `${fatigueIndex}%` : "--"}
+            color={
+              fatigueIndex == null ? undefined
+                : fatigueIndex > 40 ? "#ef4444"
+                : fatigueIndex > 20 ? "#f59e0b"
+                : "#22c55e"
+            }
+          />
+          <StatCard
+            title="Max Flare"
+            value={`${maxFlare}\u00B0`}
+            color={maxFlare > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
+          />
+        </View>
+
         {/* Per-rep bar chart */}
         {reps.length >= 2 && (
           <Card style={styles.chartCard} mode="outlined">
@@ -929,69 +917,6 @@ export default function SetAnalyticsScreen() {
           </Card>
         )}
 
-        {/* Consistency */}
-        <Card style={styles.consistencyCard}>
-          <Card.Content>
-            <Text style={styles.consistencyTitle}>
-              {"\u26A1"} Consistency Score
-            </Text>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-              <View>
-                <Text style={styles.consistencyValue}>{consistency}%</Text>
-                <Text style={styles.consistencyLabel}>{consistencyLabel}</Text>
-              </View>
-              <Text style={styles.consistencySideText}>
-                {emgChannelLabel} signal{"\n"}stability (CV)
-              </Text>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Insights */}
-        <Card
-          style={[styles.insightCard, { borderColor: dark ? "#1d4ed8" : "#bfdbfe" }]}
-          mode="outlined"
-        >
-          <Card.Content>
-            <Text variant="titleSmall" style={{ marginBottom: 10 }}>
-              {"\uD83D\uDCA1"} Performance Insights
-            </Text>
-            <Insight
-              index={1}
-              text="Your force output varied significantly. Focus on maintaining consistent form and tempo throughout the set."
-            />
-            <Insight
-              index={2}
-              text="If this set felt difficult, consider adding more rest time before your next set."
-            />
-            <Insight
-              index={3}
-              text="Prioritize technique first. Then scale load once your movement pattern stays stable."
-            />
-          </Card.Content>
-        </Card>
-
-        {/* Next Steps */}
-        <Card
-          style={[
-            styles.nextCard,
-            {
-              backgroundColor: dark ? "#0b2b1a" : "#ecfdf5",
-              borderColor: dark ? "#14532d" : "#bbf7d0",
-            },
-          ]}
-          mode="outlined"
-        >
-          <Card.Content>
-            <Text variant="titleSmall" style={{ color: dark ? "#d1fae5" : "#065f46", marginBottom: 8 }}>
-              Next Steps
-            </Text>
-            <Bullet text="Rest 2\u20133 minutes before your next set if your goal is strength." color={dark ? "#d1fae5" : "#064e3b"} />
-            <Bullet text="Keep a consistent tempo for cleaner comparisons across sets." color={dark ? "#d1fae5" : "#064e3b"} />
-            <Bullet text="If you see major force drops, reduce load slightly or increase rest." color={dark ? "#d1fae5" : "#064e3b"} />
-          </Card.Content>
-        </Card>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -1029,28 +954,6 @@ function StatCard({
   );
 }
 
-function Insight({ index, text }: { index: number; text: string }) {
-  const { colors } = useAppTheme();
-  return (
-    <View style={styles.insightRow}>
-      <View style={styles.insightIndex}>
-        <Text style={styles.insightIndexText}>{index}</Text>
-      </View>
-      <Text variant="bodySmall" style={{ flex: 1, color: colors.onSurface, lineHeight: 18 }}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-function Bullet({ text, color }: { text: string; color: string }) {
-  return (
-    <View style={{ flexDirection: "row", marginTop: 8 }}>
-      <Text style={{ marginRight: 8, color }}>{"\u2022"}</Text>
-      <Text style={{ flex: 1, color, fontSize: 13 }}>{text}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 16 },
@@ -1069,29 +972,6 @@ const styles = StyleSheet.create({
   segment: { marginTop: 16, borderRadius: 12 },
   segmentContent: { flexDirection: "row", gap: 6 },
   chartCard: { borderRadius: 12, marginTop: 16, overflow: "hidden" },
-  consistencyCard: {
-    marginTop: 16,
-    borderRadius: 12,
-    backgroundColor: "#9333ea",
-  },
-  consistencyTitle: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  consistencyValue: { color: "#fff", fontSize: 44, fontWeight: "900", marginTop: 8 },
-  consistencyLabel: { color: "#e9d5ff", fontSize: 12, marginTop: 2, fontWeight: "700" },
-  consistencySideText: { color: "#e9d5ff", fontSize: 12, textAlign: "right" },
-  insightCard: { borderRadius: 12, marginTop: 16 },
-  insightRow: { flexDirection: "row", alignItems: "flex-start", marginTop: 10 },
-  insightIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#dbeafe",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-    marginTop: 2,
-  },
-  insightIndexText: { color: "#1d4ed8", fontSize: 12, fontWeight: "800" },
-  nextCard: { borderRadius: 12, marginTop: 16 },
   imuLegend: { flexDirection: "row", gap: 12, marginBottom: 4 },
   imuLegendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   imuLegendDot: { width: 10, height: 10, borderRadius: 5 },
