@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   ScrollView,
@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { LineChart } from "react-native-chart-kit";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -408,15 +409,25 @@ export default function SetAnalyticsScreen() {
 
   const imuReferenceAxis = useMemo(() => displayImuAxes[0] ?? [], [displayImuAxes]);
 
-  const MAX_CHART_WIDTH = 2400;
-  const emgChartWidth = useMemo(
-    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, displayEmg.length * 4)),
-    [baseWidth, displayEmg.length]
-  );
-  const imuChartWidth = useMemo(
-    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, imuReferenceAxis.length * 4)),
-    [baseWidth, imuReferenceAxis.length]
-  );
+  const [emgZoom, setEmgZoom] = useState(1);
+  const [imuZoom, setImuZoom] = useState(1);
+  const emgZoomBase = useRef(1);
+  const imuZoomBase = useRef(1);
+
+  const emgPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { emgZoomBase.current = emgZoom; })
+      .onUpdate((e) => { setEmgZoom(Math.max(1, Math.min(10, emgZoomBase.current * e.scale))); })
+  , [emgZoom]);
+
+  const imuPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { imuZoomBase.current = imuZoom; })
+      .onUpdate((e) => { setImuZoom(Math.max(1, Math.min(10, imuZoomBase.current * e.scale))); })
+  , [imuZoom]);
+
+  const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
+  const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
 
   const emgSelectedSeries = useMemo(() => displayEmg.map((p) => p.value), [displayEmg]);
 
@@ -666,65 +677,55 @@ export default function SetAnalyticsScreen() {
         {metric === "force" && emgSelectedSeries.length >= 2 && (
           <Card style={styles.chartCard} mode="outlined">
             <Card.Content>
-              <Text variant="titleSmall" style={{ marginBottom: 10 }}>
+              <Text variant="titleSmall" style={{ marginBottom: 4 }}>
                 {emgTitle}
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                indicatorStyle={dark ? "white" : "black"}
-                contentContainerStyle={{ paddingBottom: 6 }}
-              >
-                <View style={{ marginTop: 10 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{ width: 18, alignItems: "center", marginRight: 8 }}>
-                      <Text
-                        style={{
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                          transform: [{ rotate: "-90deg" }],
-                          width: 220,
-                          textAlign: "center",
-                        }}
-                      >
-                        {mvcValue > 0 ? "% MVC" : "EMG (a.u.)"}
-                      </Text>
-                    </View>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator
-                      indicatorStyle={dark ? "white" : "black"}
-                    >
-                      <LineChart
-                        data={{
-                          labels: emgChartLabels,
-                          datasets: [
-                            { data: emgSelectedSeries as any },
-                            { data: [100], withDots: false, color: () => "transparent" },
-                          ],
-                        }}
-                        width={emgChartWidth}
-                        height={220}
-                        withDots={false}
-                        withShadow={false}
-                        withInnerLines
-                        withOuterLines={false}
-                        fromZero
-                        segments={5}
-                        yAxisSuffix={mvcValue > 0 ? "%" : ""}
-                        chartConfig={{ ...chartConfig, paddingRight: 12 }}
-                        style={{ borderRadius: 12 }}
-                      />
-                    </ScrollView>
-                  </View>
-                  <Text
-                    variant="labelSmall"
-                    style={{ marginTop: 10, color: colors.onSurfaceVariant, textAlign: "center" }}
-                  >
-                    Time (s)
+              {emgZoom > 1 && (
+                <Pressable onPress={() => setEmgZoom(1)}>
+                  <Text variant="labelSmall" style={{ color: colors.primary, marginBottom: 4 }}>
+                    {emgZoom.toFixed(1)}x — tap to reset
                   </Text>
-                </View>
-              </ScrollView>
+                </Pressable>
+              )}
+              <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginBottom: 6 }}>
+                Pinch to zoom
+              </Text>
+              <GestureDetector gesture={emgPinch}>
+                <ScrollView
+                  horizontal
+                  scrollEnabled={emgZoom > 1}
+                  showsHorizontalScrollIndicator={emgZoom > 1}
+                  indicatorStyle={dark ? "white" : "black"}
+                >
+                  <LineChart
+                    data={{
+                      labels: emgChartLabels,
+                      datasets: [
+                        { data: emgSelectedSeries as any },
+                        { data: [100], withDots: false, color: () => "transparent" },
+                      ],
+                    }}
+                    width={emgChartWidth}
+                    height={220}
+                    withDots={false}
+                    withShadow={false}
+                    withInnerLines
+                    withOuterLines={false}
+                    fromZero
+                    segments={5}
+                    yAxisSuffix={mvcValue > 0 ? "%" : ""}
+                    yAxisLabel=""
+                    chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                    style={{ borderRadius: 12 }}
+                  />
+                </ScrollView>
+              </GestureDetector>
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Time (s)
+              </Text>
             </Card.Content>
           </Card>
         )}
@@ -746,53 +747,44 @@ export default function SetAnalyticsScreen() {
                 ))}
               </View>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                indicatorStyle={dark ? "white" : "black"}
-                contentContainerStyle={{ paddingBottom: 6 }}
-              >
-                <View style={{ marginTop: 10 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{ width: 18, alignItems: "center", marginRight: 8 }}>
-                      <Text
-                        style={{
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                          transform: [{ rotate: "-90deg" }],
-                          width: 220,
-                          textAlign: "center",
-                        }}
-                      >
-                        Degrees
-                      </Text>
-                    </View>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator
-                      indicatorStyle={dark ? "white" : "black"}
-                    >
-                      <LineChart
-                        data={imuDatasets}
-                        width={imuChartWidth}
-                        height={220}
-                        withDots={false}
-                        withShadow={false}
-                        withInnerLines
-                        withOuterLines={false}
-                        chartConfig={{ ...chartConfig, paddingRight: 12 }}
-                        style={{ borderRadius: 12 }}
-                      />
-                    </ScrollView>
-                  </View>
-                  <Text
-                    variant="labelSmall"
-                    style={{ marginTop: 10, color: colors.onSurfaceVariant, textAlign: "center" }}
-                  >
-                    Time (s)
+              {imuZoom > 1 && (
+                <Pressable onPress={() => setImuZoom(1)}>
+                  <Text variant="labelSmall" style={{ color: colors.primary, marginBottom: 4 }}>
+                    {imuZoom.toFixed(1)}x — tap to reset
                   </Text>
-                </View>
-              </ScrollView>
+                </Pressable>
+              )}
+              <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginBottom: 6 }}>
+                Pinch to zoom
+              </Text>
+              <GestureDetector gesture={imuPinch}>
+                <ScrollView
+                  horizontal
+                  scrollEnabled={imuZoom > 1}
+                  showsHorizontalScrollIndicator={imuZoom > 1}
+                  indicatorStyle={dark ? "white" : "black"}
+                >
+                  <LineChart
+                    data={imuDatasets}
+                    width={imuChartWidth}
+                    height={220}
+                    withDots={false}
+                    withShadow={false}
+                    withInnerLines
+                    withOuterLines={false}
+                    yAxisLabel=""
+                    yAxisSuffix={"\u00B0"}
+                    chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                    style={{ borderRadius: 12 }}
+                  />
+                </ScrollView>
+              </GestureDetector>
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Time (s)
+              </Text>
             </Card.Content>
           </Card>
         )}
