@@ -698,7 +698,10 @@ export default function SetAnalyticsScreen() {
                       <LineChart
                         data={{
                           labels: emgChartLabels,
-                          datasets: [{ data: emgSelectedSeries as any }],
+                          datasets: [
+                            { data: emgSelectedSeries as any },
+                            { data: [100], withDots: false, color: () => "transparent" },
+                          ],
                         }}
                         width={emgChartWidth}
                         height={220}
@@ -706,6 +709,9 @@ export default function SetAnalyticsScreen() {
                         withShadow={false}
                         withInnerLines
                         withOuterLines={false}
+                        fromZero
+                        segments={5}
+                        yAxisSuffix={mvcValue > 0 ? "%" : ""}
                         chartConfig={{ ...chartConfig, paddingRight: 12 }}
                         style={{ borderRadius: 12 }}
                       />
