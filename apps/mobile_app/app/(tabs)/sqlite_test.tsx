@@ -21,15 +21,19 @@ import {
   listSets,
   listSamplesForSet,
   countSamplesForSet,
+  listRepsForSet,
+  listAllCalibrations,
   clearBleDb,
   renameSession,
   deleteSession,
   type SessionRow,
   type SetRow,
   type SampleRow,
+  type RepRow,
+  type CalibrationRow,
 } from "../sqlite/bleDb";
 
-type ViewMode = "sessions" | "sets" | "samples";
+type ViewMode = "sessions" | "sets" | "samples" | "reps" | "calibrations";
 type SampleTab = "emg" | "imu_left" | "imu_right";
 
 export default function DatabaseViewer() {
@@ -42,6 +46,8 @@ export default function DatabaseViewer() {
   const [samples, setSamples] = useState<SampleRow[]>([]);
   const [sampleTotal, setSampleTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [reps, setReps] = useState<RepRow[]>([]);
+  const [calibrations, setCalibrations] = useState<CalibrationRow[]>([]);
 
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
   const [selectedSet, setSelectedSet] = useState<SetRow | null>(null);
@@ -51,7 +57,6 @@ export default function DatabaseViewer() {
   const [status, setStatus] = useState("");
   const [showClearBanner, setShowClearBanner] = useState(false);
 
-  // Rename modal state
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameTarget, setRenameTarget] = useState<SessionRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -95,15 +100,35 @@ export default function DatabaseViewer() {
     loadPage(set.id, 0);
   }
 
+  function openReps(set: SetRow) {
+    const rows = listRepsForSet(set.id);
+    setSelectedSet(set);
+    setReps(rows);
+    setViewMode("reps");
+    setStatus(`${rows.length} rep${rows.length !== 1 ? "s" : ""} in set`);
+  }
+
+  function openCalibrations() {
+    const rows = listAllCalibrations();
+    setCalibrations(rows);
+    setViewMode("calibrations");
+    setStatus(`${rows.length} calibration${rows.length !== 1 ? "s" : ""}`);
+  }
+
   function goBack() {
-    if (viewMode === "samples") {
+    if (viewMode === "samples" || viewMode === "reps") {
       setViewMode("sets");
       setSelectedSet(null);
       setSamples([]);
+      setReps([]);
     } else if (viewMode === "sets") {
       setViewMode("sessions");
       setSelectedSession(null);
       setSets([]);
+      loadSessions();
+    } else if (viewMode === "calibrations") {
+      setViewMode("sessions");
+      setCalibrations([]);
       loadSessions();
     }
   }
@@ -113,6 +138,8 @@ export default function DatabaseViewer() {
     setSessions([]);
     setSets([]);
     setSamples([]);
+    setReps([]);
+    setCalibrations([]);
     setSelectedSession(null);
     setSelectedSet(null);
     setViewMode("sessions");
@@ -162,6 +189,18 @@ export default function DatabaseViewer() {
     return id.length > 20 ? id.slice(0, 8) + "..." + id.slice(-6) : id;
   }
 
+  function fmtNum(v: number | null | undefined, digits = 4) {
+    if (v == null) return "\u2014";
+    return Number(v).toFixed(digits);
+  }
+
+  const viewTitle =
+    viewMode === "sessions" ? "Database Viewer" :
+    viewMode === "sets" ? "Sets" :
+    viewMode === "samples" ? "Samples" :
+    viewMode === "reps" ? "Reps" :
+    "Calibrations";
+
   return (
     <>
       <ScrollView
@@ -175,9 +214,7 @@ export default function DatabaseViewer() {
           )}
           <View style={{ flex: 1 }}>
             <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "900" }}>
-              {viewMode === "sessions" && "Database Viewer"}
-              {viewMode === "sets" && "Sets"}
-              {viewMode === "samples" && "Samples"}
+              {viewTitle}
             </Text>
             {selectedSession && (
               <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
@@ -197,7 +234,7 @@ export default function DatabaseViewer() {
           ]}
           icon="alert"
         >
-          This will permanently delete all sessions, sets, and samples.
+          This will permanently delete all sessions, sets, samples, reps, and calibrations.
         </Banner>
 
         {/* Toolbar */}
@@ -210,10 +247,22 @@ export default function DatabaseViewer() {
               if (viewMode === "sessions") loadSessions();
               else if (viewMode === "sets" && selectedSession) openSession(selectedSession);
               else if (viewMode === "samples" && selectedSet) openSet(selectedSet);
+              else if (viewMode === "reps" && selectedSet) openReps(selectedSet);
+              else if (viewMode === "calibrations") openCalibrations();
             }}
           >
             Refresh
           </Button>
+          {viewMode === "sessions" && (
+            <Button
+              mode="outlined"
+              icon="tune"
+              compact
+              onPress={openCalibrations}
+            >
+              Calibrations
+            </Button>
+          )}
           <Button
             mode="outlined"
             icon="delete-outline"
@@ -298,12 +347,13 @@ export default function DatabaseViewer() {
             ) : (
               sets.map((st, idx) => {
                 const count = countSamplesForSet(st.id);
+                const repCount = st.rep_count ?? 0;
+                const hasBaseline = (st.baseline_emg_left_pec ?? 0) !== 0 || (st.baseline_emg_left_tricep ?? 0) !== 0;
                 return (
                   <Card
                     key={st.id}
                     mode="outlined"
                     style={styles.rowCard}
-                    onPress={() => openSet(st)}
                   >
                     <Card.Content>
                       <View style={styles.cardRow}>
@@ -320,10 +370,58 @@ export default function DatabaseViewer() {
                           <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
                             Ended: {fmtTime(st.ended_at)}
                           </Text>
+                          <View style={{ flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                            <Chip compact textStyle={{ fontSize: 10 }}>{count} samples</Chip>
+                            <Chip compact textStyle={{ fontSize: 10 }}>{repCount} reps</Chip>
+                            {hasBaseline && (
+                              <Chip compact textStyle={{ fontSize: 10 }} icon="check-circle-outline">Baseline</Chip>
+                            )}
+                          </View>
                         </View>
-                        <Chip compact textStyle={{ fontSize: 11 }}>{count} samples</Chip>
-                        <IconButton icon="chevron-right" size={20} />
                       </View>
+                      <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                        <Button
+                          mode="outlined"
+                          compact
+                          icon="table"
+                          onPress={() => openSet(st)}
+                          style={{ flex: 1 }}
+                          labelStyle={{ fontSize: 12 }}
+                        >
+                          Samples
+                        </Button>
+                        <Button
+                          mode="outlined"
+                          compact
+                          icon="repeat"
+                          onPress={() => openReps(st)}
+                          style={{ flex: 1 }}
+                          labelStyle={{ fontSize: 12 }}
+                        >
+                          Reps ({repCount})
+                        </Button>
+                      </View>
+                      {hasBaseline && (
+                        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.outline }}>
+                          <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}>
+                            Baseline Offsets
+                          </Text>
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                            <Text variant="labelSmall" style={{ color: colors.onSurface }}>
+                              L Tri: {fmtNum(st.baseline_emg_left_tricep)}
+                            </Text>
+                            <Text variant="labelSmall" style={{ color: colors.onSurface }}>
+                              L Pec: {fmtNum(st.baseline_emg_left_pec)}
+                            </Text>
+                            <Text variant="labelSmall" style={{ color: colors.onSurface }}>
+                              R Tri: {fmtNum(st.baseline_emg_right_tricep)}
+                            </Text>
+                            <Text variant="labelSmall" style={{ color: colors.onSurface }}>
+                              R Pec: {fmtNum(st.baseline_emg_right_pec)}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
                     </Card.Content>
                   </Card>
                 );
@@ -440,6 +538,94 @@ export default function DatabaseViewer() {
           </>
         )}
 
+        {/* ──────── REPS VIEW ──────── */}
+        {viewMode === "reps" && (
+          <>
+            {reps.length === 0 ? (
+              <Card mode="outlined" style={styles.emptyCard}>
+                <Card.Content>
+                  <Text variant="bodyMedium" style={{ textAlign: "center", color: colors.onSurfaceVariant }}>
+                    No reps recorded for this set
+                  </Text>
+                </Card.Content>
+              </Card>
+            ) : (
+              <ScrollView horizontal>
+                <DataTable>
+                  <DataTable.Header>
+                    <DataTable.Title style={styles.colNarrow}>Rep #</DataTable.Title>
+                    <DataTable.Title style={styles.colWide} numeric>Start (ms)</DataTable.Title>
+                    <DataTable.Title style={styles.colWide} numeric>End (ms)</DataTable.Title>
+                    <DataTable.Title style={styles.col} numeric>Duration</DataTable.Title>
+                    <DataTable.Title style={styles.col} numeric>Peak EMG</DataTable.Title>
+                    <DataTable.Title style={styles.col} numeric>Mean EMG</DataTable.Title>
+                  </DataTable.Header>
+
+                  {reps.map((r) => {
+                    const dur = r.end_ms != null ? r.end_ms - r.start_ms : null;
+                    return (
+                      <DataTable.Row key={r.id}>
+                        <DataTable.Cell style={styles.colNarrow}>{r.rep_number}</DataTable.Cell>
+                        <DataTable.Cell style={styles.colWide} numeric>{r.start_ms}</DataTable.Cell>
+                        <DataTable.Cell style={styles.colWide} numeric>{r.end_ms ?? "\u2014"}</DataTable.Cell>
+                        <DataTable.Cell style={styles.col} numeric>
+                          {dur != null ? `${(dur / 1000).toFixed(2)}s` : "\u2014"}
+                        </DataTable.Cell>
+                        <DataTable.Cell style={styles.col} numeric>{fmtNum(r.peak_emg)}</DataTable.Cell>
+                        <DataTable.Cell style={styles.col} numeric>{fmtNum(r.mean_emg)}</DataTable.Cell>
+                      </DataTable.Row>
+                    );
+                  })}
+                </DataTable>
+              </ScrollView>
+            )}
+          </>
+        )}
+
+        {/* ──────── CALIBRATIONS VIEW ──────── */}
+        {viewMode === "calibrations" && (
+          <>
+            {calibrations.length === 0 ? (
+              <Card mode="outlined" style={styles.emptyCard}>
+                <Card.Content>
+                  <Text variant="bodyMedium" style={{ textAlign: "center", color: colors.onSurfaceVariant }}>
+                    No calibrations found
+                  </Text>
+                </Card.Content>
+              </Card>
+            ) : (
+              calibrations.map((c) => (
+                <Card key={c.id} mode="outlined" style={styles.rowCard}>
+                  <Card.Content>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <View style={{ flex: 1 }}>
+                        <Text variant="titleSmall" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                          {c.exercise_name}
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginTop: 2 }}>
+                          Channel: {c.emg_channel}
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                          Date: {fmtTime(c.calibrated_at)}
+                        </Text>
+                        <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                          User: {shortId(c.user_id)}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>MVC</Text>
+                        <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                          {c.mvc_value.toFixed(4)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Card.Content>
+                </Card>
+              ))
+            )}
+          </>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -516,6 +702,9 @@ const styles = StyleSheet.create({
   },
   col: {
     width: 70,
+  },
+  colWide: {
+    width: 100,
   },
   modal: {
     margin: 24,

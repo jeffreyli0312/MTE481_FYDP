@@ -53,6 +53,11 @@ export type SetRow = {
   label: string | null;
   started_at: number;
   ended_at: number | null;
+  baseline_emg_left_tricep: number | null;
+  baseline_emg_left_pec: number | null;
+  baseline_emg_right_tricep: number | null;
+  baseline_emg_right_pec: number | null;
+  rep_count: number | null;
 };
 
 export type SampleRow = {
@@ -562,6 +567,13 @@ export function getLatestCalibration(
      WHERE user_id = ? AND exercise_name = ?
      ORDER BY calibrated_at DESC LIMIT 1`,
     [userId, exerciseName],
+  );
+}
+
+export function listAllCalibrations(): CalibrationRow[] {
+  const db = getDb();
+  return db.getAllSync<CalibrationRow>(
+    `SELECT * FROM calibrations ORDER BY calibrated_at DESC`
   );
 }
 
