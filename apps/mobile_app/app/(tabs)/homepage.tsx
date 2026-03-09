@@ -11,12 +11,8 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
-import SessionView from "../components/SessionView";
-import ExerciseOverview from "../components/ExerciseOverview";
 import type { Exercise, SessionRecord } from "../types/workout";
 
-type ScreenMode = "home" | "exercise";
-type ExerciseMode = "overview" | "session";
 
 const AVAILABLE_EXERCISES: Exercise[] = [
   { id: "bench-press", name: "Bench Press", icon: "\uD83D\uDCAA" },
@@ -27,10 +23,6 @@ export default function HomePageScreen() {
   const { colors, dark } = useAppTheme();
 
   const username = user?.email?.split("@")[0] || "User";
-
-  const [screenMode, setScreenMode] = useState<ScreenMode>("home");
-  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
-  const [exerciseMode, setExerciseMode] = useState<ExerciseMode>("overview");
 
   const [sessionsByExercise, setSessionsByExercise] = useState<
     Record<string, SessionRecord[]>
@@ -44,9 +36,7 @@ export default function HomePageScreen() {
     };
   }, [sessionsByExercise]);
 
-  const selectedExerciseId = selectedExercise?.id ?? "";
-  const selectedExerciseName = selectedExercise?.name ?? "";
-  // const savedSessionsForExercise = sessionsByExercise[selectedExerciseId] ?? [];
+
 
   async function handleLogout() {
     try {
@@ -57,56 +47,12 @@ export default function HomePageScreen() {
   }
 
   function handleSelectExercise(exercise: Exercise) {
-    setSelectedExercise(exercise);
-    setExerciseMode("overview");
-    setScreenMode("exercise");
-  }
-
-  function handleBackToHome() {
-    setExerciseMode("overview");
-    setSelectedExercise(null);
-    setScreenMode("home");
-  }
-
-  function handleEndSession(session: SessionRecord) {
-    setSessionsByExercise((prev) => {
-      const existing = prev[selectedExerciseId] ?? [];
-      return { ...prev, [selectedExerciseId]: [session, ...existing] };
-    });
-    setExerciseMode("overview");
     router.push({
-      pathname: "/session/[sessionId]",
-      params: {
-        sessionId: session.id,
-        source: "sqlite",
-        title: selectedExerciseName,
-      },
+      pathname: "/exercise/[exerciseName]",
+      params: { exerciseName: exercise.name },
     });
   }
 
-  // ─── Exercise page (overview or active session) ───
-  if (screenMode === "exercise") {
-    return (
-      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
-        <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 28 }}>
-          {exerciseMode === "session" ? (
-            <SessionView
-              exerciseName={selectedExerciseName}
-              onBack={() => setExerciseMode("overview")}
-              onEndSession={handleEndSession}
-            />
-          ) : (
-            <ExerciseOverview
-              exerciseName={selectedExerciseName}
-              onBack={handleBackToHome}
-              onStartNewSession={() => setExerciseMode("session")}
-            />
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
 
   // ─── Home screen ───
   return (

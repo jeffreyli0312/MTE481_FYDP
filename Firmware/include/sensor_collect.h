@@ -8,10 +8,10 @@
 // =================================================================================
 // PIN / I2C CONFIGURATION
 // =================================================================================
-#define EMG_PIN_LEFT_TRICEP   34   // ADC pin – left tricep
+#define EMG_PIN_LEFT_TRICEP   32   // ADC pin – left tricep
 #define EMG_PIN_LEFT_PEC      35   // ADC pin – left pec
-#define EMG_PIN_RIGHT_TRICEP  32   // ADC pin – right tricep
-#define EMG_PIN_RIGHT_PEC     33   // ADC pin – right pec
+#define EMG_PIN_RIGHT_TRICEP  33   // ADC pin – right tricep
+#define EMG_PIN_RIGHT_PEC     34   // ADC pin – right pec
 
 // AD0 values: 1 = default SparkFun breakout address (0x69)
 //             0 = ADR jumper closed           (0x68)
@@ -80,7 +80,7 @@ static int16_t processEmgChannel(EmgChannel &ch, int pin) {
 
 // =================================================================================
 // ORIENTATION CALCULATION
-// Same tilt-compensated approach as IMU_BLE.ino.
+// Tilt-compensated approach with accelerometer + magnetometer
 // Returns roll, pitch, yaw in centidegrees (×100) packed as int16.
 // =================================================================================
 struct Orientation { int16_t roll; int16_t pitch; int16_t yaw; };

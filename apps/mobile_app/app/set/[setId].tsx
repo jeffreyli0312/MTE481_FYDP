@@ -24,6 +24,7 @@ import {
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { LineChart, BarChart } from "react-native-chart-kit";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -518,30 +519,31 @@ export default function SetAnalyticsScreen() {
   const [imuZoom, setImuZoom] = useState(1);
   const emgZoomBase = useRef(1);
   const imuZoomBase = useRef(1);
+  // Refs mirror state so gesture callbacks (UI thread) can read current zoom
+  const emgZoomRef = useRef(1);
+  const imuZoomRef = useRef(1);
+  emgZoomRef.current = emgZoom;
+  imuZoomRef.current = imuZoom;
 
-  const emgPinch = useMemo(
-    () =>
-      Gesture.Pinch()
-        .onStart(() => {
-          emgZoomBase.current = emgZoom;
-        })
-        .onUpdate((e) => {
-          setEmgZoom(Math.max(1, Math.min(10, emgZoomBase.current * e.scale)));
-        }),
-    [emgZoom],
-  );
+  const applyEmgZoom = useCallback((z: number) => setEmgZoom(z), []);
+  const applyImuZoom = useCallback((z: number) => setImuZoom(z), []);
 
-  const imuPinch = useMemo(
-    () =>
-      Gesture.Pinch()
-        .onStart(() => {
-          imuZoomBase.current = imuZoom;
-        })
-        .onUpdate((e) => {
-          setImuZoom(Math.max(1, Math.min(10, imuZoomBase.current * e.scale)));
-        }),
-    [imuZoom],
-  );
+  // Gestures built once — use refs instead of state in deps to prevent recreation mid-gesture
+  const emgPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { emgZoomBase.current = emgZoomRef.current; })
+      .onUpdate((e) => {
+        runOnJS(applyEmgZoom)(Math.max(1, Math.min(10, emgZoomBase.current * e.scale)));
+      })
+  , [applyEmgZoom]);
+
+  const imuPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { imuZoomBase.current = imuZoomRef.current; })
+      .onUpdate((e) => {
+        runOnJS(applyImuZoom)(Math.max(1, Math.min(10, imuZoomBase.current * e.scale)));
+      })
+  , [applyImuZoom]);
 
   const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
   const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
