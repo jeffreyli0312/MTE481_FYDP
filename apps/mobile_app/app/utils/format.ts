@@ -85,3 +85,21 @@ export function movingAverageSmooth(
   const ma = new MovingAverage(windowSize);
   return points.map((p) => ({ time: p.time, value: ma.push(p.value) }));
 }
+
+export function emaSmooth(
+  points: { time: number; value: number }[],
+  alpha = 0.2
+): { time: number; value: number }[] {
+  if (points.length === 0) return points;
+  const a = Math.max(0.001, Math.min(0.999, alpha));
+  const out: { time: number; value: number }[] = [];
+  let prev = points[0].value;
+  out.push({ time: points[0].time, value: prev });
+  for (let i = 1; i < points.length; i++) {
+    const v = points[i].value;
+    const s = a * v + (1 - a) * prev;
+    prev = s;
+    out.push({ time: points[i].time, value: s });
+  }
+  return out;
+}

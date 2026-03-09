@@ -36,7 +36,7 @@ import {
   type RepRow,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
-import { movingAverageSmooth } from "../utils/format";
+import { movingAverageSmooth, emaSmooth } from "../utils/format";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -188,21 +188,6 @@ function rmsEnvelope(points: Point[], windowSize = 25): Point[] {
     if (buf.length > windowSize) sumSq -= buf.shift()!;
     const rms = Math.sqrt(sumSq / buf.length);
     out.push({ time: points[i].time, value: rms });
-  }
-  return out;
-}
-
-function emaSmooth(points: Point[], alpha = 0.2): Point[] {
-  if (points.length === 0) return points;
-  const a = Math.max(0.001, Math.min(0.999, alpha));
-  const out: Point[] = [];
-  let prev = points[0].value;
-  out.push({ time: points[0].time, value: prev });
-  for (let i = 1; i < points.length; i++) {
-    const v = points[i].value;
-    const s = a * v + (1 - a) * prev;
-    prev = s;
-    out.push({ time: points[i].time, value: s });
   }
   return out;
 }
@@ -440,6 +425,20 @@ export default function SetAnalyticsScreen() {
           emg_right_pec: emgAll,
         };
 
+        const buildImuAxis = (key: ImuAxisKey): Point[] => {
+          if (rows.length === 0) return [];
+          const rawPts = rows
+            .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
+            .sort((a, b) => a.time - b.time);
+
+          if (rawPts.length === 0) return [];
+
+          return rawPts.map((r) => {
+            let val = Number(r[key]);
+            return { time: r.time, value: val };
+          });
+        };
+
         const perImu: Record<ImuAxisKey, Point[]> = {
           l_roll: imuAll,
           l_pitch: imuAll,
@@ -594,6 +593,29 @@ export default function SetAnalyticsScreen() {
     EMG_CHANNELS.find((c) => c.key === selectedEmgChannel)?.label ?? "";
   const emgTitle = `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`;
   const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} IMU – Roll / Pitch / Yaw`;
+
+  const yawValues = useMemo(() => {
+    if (!displayImuAxes[2] || displayImuAxes[2].length === 0) return [];
+    return displayImuAxes[2].map((p) => p.value).filter(Number.isFinite);
+  }, [displayImuAxes]);
+
+  const baselineYaw = useMemo(() => {
+    if (yawValues.length === 0) return 0;
+    // displayImuAxes is already downsampled/smoothed, so 300 samples might be the entire array.
+    // Let's just use the first few smoothed samples for a baseline (e.g. 10% of display length or first few)
+    // Actually, in [sessionId].tsx we used 300 raw samples directly.
+    // Using the first smoothed value is very stable now.
+    return yawValues[0];
+  }, [yawValues]);
+
+  const maxYaw = useMemo(
+    () => (yawValues.length ? Math.max(...yawValues) : 0),
+    [yawValues],
+  );
+  const minYaw = useMemo(
+    () => (yawValues.length ? Math.min(...yawValues) : 0),
+    [yawValues],
+  );
 
   const channelValues = useMemo(
     () => emgSeries.map((p) => p.value).filter((v) => Number.isFinite(v)),
@@ -1017,6 +1039,58 @@ export default function SetAnalyticsScreen() {
               >
                 Time (s)
               </Text>
+
+              {/* Max/Min Yaw Display */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-around",
+                  marginTop: 16,
+                }}
+              >
+                <View style={{ alignItems: "center" }}>
+                  <Text
+                    variant="labelSmall"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
+                    Baseline Yaw
+                  </Text>
+                  <Text
+                    variant="titleLarge"
+                    style={{ color: colors.onSurface, fontWeight: "700" }}
+                  >
+                    {baselineYaw.toFixed(1)}°
+                  </Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text
+                    variant="labelSmall"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
+                    Min Yaw
+                  </Text>
+                  <Text
+                    variant="titleLarge"
+                    style={{ color: colors.onSurface, fontWeight: "700" }}
+                  >
+                    {minYaw.toFixed(1)}°
+                  </Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text
+                    variant="labelSmall"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
+                    Max Yaw
+                  </Text>
+                  <Text
+                    variant="titleLarge"
+                    style={{ color: colors.onSurface, fontWeight: "700" }}
+                  >
+                    {maxYaw.toFixed(1)}°
+                  </Text>
+                </View>
+              </View>
             </Card.Content>
           </Card>
         )}
