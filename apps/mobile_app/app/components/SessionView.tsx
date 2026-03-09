@@ -77,8 +77,8 @@ export default function SessionView({
 
   const mvcValue = calibration?.mvc_value ?? 0;
   const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
-  const upperThreshold = mvcValue * 0.60;
-  const lowerThreshold = mvcValue * 0.35;
+  const upperThreshold = mvcValue * 0.50;
+  const lowerThreshold = mvcValue * 0.25;
 
   // Load calibration on mount — session row is NOT inserted until first set starts
   useEffect(() => {
