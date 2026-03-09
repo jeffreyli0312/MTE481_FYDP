@@ -1043,8 +1043,6 @@ export default function SetAnalyticsScreen() {
               >
                 Time (s)
               </Text>
-<<<<<<< HEAD
-=======
 
               {/* Max/Min Yaw Display */}
               <View
@@ -1097,7 +1095,6 @@ export default function SetAnalyticsScreen() {
                   </Text>
                 </View>
               </View>
->>>>>>> b502d36ec2506d6f8f0a004ecf6575001598c1a9
             </Card.Content>
           </Card>
         )}
