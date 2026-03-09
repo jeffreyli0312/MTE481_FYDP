@@ -937,7 +937,7 @@ export default function SetAnalyticsScreen() {
                       datasets: [
                         { data: emgSelectedSeries as any },
                         {
-                          data: [100],
+                          data: [200],
                           withDots: false,
                           color: () => "transparent",
                         },
