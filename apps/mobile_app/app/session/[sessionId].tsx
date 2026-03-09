@@ -22,7 +22,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth, emaSmooth } from "../utils/format";
 
-const FLARE_THRESHOLD = 15; // degrees
+const FLARE_THRESHOLD = 45; // degrees
 
 type SupabaseSetRow = {
   id: string;
