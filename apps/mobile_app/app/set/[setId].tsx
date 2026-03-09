@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   ScrollView,
@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { LineChart, BarChart } from "react-native-chart-kit";
+import { LineChart } from "react-native-chart-kit";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -31,7 +31,12 @@ type SampleRow = {
   emg_left_pec?: number | null;
   emg_right_tricep?: number | null;
   emg_right_pec?: number | null;
-  gyrx?: number | null;
+  l_roll?: number | null;
+  l_pitch?: number | null;
+  l_yaw?: number | null;
+  r_roll?: number | null;
+  r_pitch?: number | null;
+  r_yaw?: number | null;
 };
 
 type Point = { time: number; value: number };
@@ -45,7 +50,16 @@ const EMG_CHANNELS: { key: EmgChannelKey; label: string }[] = [
   { key: "emg_right_pec", label: "R Pec" },
 ];
 
-type MetricKey = "force" | "yaw";
+type ImuAxisKey = "l_roll" | "l_pitch" | "l_yaw" | "r_roll" | "r_pitch" | "r_yaw";
+type ImuSide = "left" | "right";
+
+const IMU_AXES: { axis: string; leftKey: ImuAxisKey; rightKey: ImuAxisKey; label: string; color: string }[] = [
+  { axis: "roll",  leftKey: "l_roll",  rightKey: "r_roll",  label: "Roll",  color: "rgba(59,130,246,1)" },
+  { axis: "pitch", leftKey: "l_pitch", rightKey: "r_pitch", label: "Pitch", color: "rgba(249,115,22,1)" },
+  { axis: "yaw",   leftKey: "l_yaw",   rightKey: "r_yaw",   label: "Yaw",   color: "rgba(34,197,94,1)" },
+];
+
+type MetricKey = "force" | "imu";
 
 function formatDateOnly(iso?: string) {
   if (!iso) return "";
@@ -165,14 +179,18 @@ export default function SetAnalyticsScreen() {
   const [emgChannelSeries, setEmgChannelSeries] = useState<Record<EmgChannelKey, Point[]>>({
     emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [],
   });
-  const [imuSeries, setImuSeries] = useState<Point[]>([]);
+  const [imuAxisSeries, setImuAxisSeries] = useState<Record<ImuAxisKey, Point[]>>({
+    l_roll: [], l_pitch: [], l_yaw: [],
+    r_roll: [], r_pitch: [], r_yaw: [],
+  });
   const [metric, setMetric] = useState<MetricKey>("force");
   const [selectedEmgChannel, setSelectedEmgChannel] = useState<EmgChannelKey>("emg_left_pec");
+  const [selectedImuSide, setSelectedImuSide] = useState<ImuSide>("left");
   const [mvcValue, setMvcValue] = useState(0);
 
   const metricOptions: { key: MetricKey; label: string }[] = [
     { key: "force", label: "EMG" },
-    { key: "yaw", label: "Yaw" },
+    { key: "imu", label: "IMU" },
   ];
 
   useEffect(() => {
@@ -204,7 +222,12 @@ export default function SetAnalyticsScreen() {
           emg_left_pec: Math.max(0, Number(r.emg_left_pec ?? 0) - baseline.emg_left_pec),
           emg_right_tricep: Math.max(0, Number(r.emg_right_tricep ?? 0) - baseline.emg_right_tricep),
           emg_right_pec: Math.max(0, Number(r.emg_right_pec ?? 0) - baseline.emg_right_pec),
-          gyrx: Number(r.r_roll ?? r.l_roll ?? 0),
+          l_roll: Number(r.l_roll ?? 0),
+          l_pitch: Number(r.l_pitch ?? 0),
+          l_yaw: Number(r.l_yaw ?? 0),
+          r_roll: Number(r.r_roll ?? 0),
+          r_pitch: Number(r.r_pitch ?? 0),
+          r_yaw: Number(r.r_yaw ?? 0),
         }));
 
         const buildChannel = (key: EmgChannelKey): Point[] =>
@@ -223,10 +246,16 @@ export default function SetAnalyticsScreen() {
           emg_right_pec: buildChannel("emg_right_pec"),
         };
 
-        const imuAll: Point[] = rows
-          .filter((r) => Number.isFinite(r.time) && Number.isFinite(r.gyrx))
-          .map((r) => ({ time: r.time, value: Number(r.gyrx) }))
-          .sort((a, b) => a.time - b.time);
+        const buildImuAxis = (key: ImuAxisKey): Point[] =>
+          rows
+            .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
+            .map((r) => ({ time: r.time, value: Number(r[key]) }))
+            .sort((a, b) => a.time - b.time);
+
+        const perImu: Record<ImuAxisKey, Point[]> = {
+          l_roll: buildImuAxis("l_roll"), l_pitch: buildImuAxis("l_pitch"), l_yaw: buildImuAxis("l_yaw"),
+          r_roll: buildImuAxis("r_roll"), r_pitch: buildImuAxis("r_pitch"), r_yaw: buildImuAxis("r_yaw"),
+        };
 
         const times = Array.from(new Set(rows.map((r) => r.time))).sort(
           (a, b) => a - b
@@ -244,7 +273,7 @@ export default function SetAnalyticsScreen() {
         if (!cancelled) {
           setSamples(rows);
           setEmgChannelSeries(perChannel);
-          setImuSeries(imuAll);
+          setImuAxisSeries(perImu);
           setDuration(formatDurationFromMs(durMs));
         }
 
@@ -298,13 +327,15 @@ export default function SetAnalyticsScreen() {
 
       const rows: SampleRow[] = times.map((t) => {
         const emgVal = emgMap.has(t) ? emgMap.get(t)! : null;
+        const imuVal = imuMap.has(t) ? imuMap.get(t)! : null;
         return {
           time: t,
           emg_left_tricep: emgVal,
           emg_left_pec: emgVal,
           emg_right_tricep: emgVal,
           emg_right_pec: emgVal,
-          gyrx: imuMap.has(t) ? imuMap.get(t)! : null,
+          l_roll: imuVal, l_pitch: imuVal, l_yaw: imuVal,
+          r_roll: imuVal, r_pitch: imuVal, r_yaw: imuVal,
         };
       });
 
@@ -313,6 +344,11 @@ export default function SetAnalyticsScreen() {
         emg_left_pec: emgAll,
         emg_right_tricep: emgAll,
         emg_right_pec: emgAll,
+      };
+
+      const perImu: Record<ImuAxisKey, Point[]> = {
+        l_roll: imuAll, l_pitch: imuAll, l_yaw: imuAll,
+        r_roll: imuAll, r_pitch: imuAll, r_yaw: imuAll,
       };
 
       const firstTime = times[0];
@@ -326,7 +362,7 @@ export default function SetAnalyticsScreen() {
 
       if (!cancelled) {
         setEmgChannelSeries(perChannel);
-        setImuSeries(imuAll);
+        setImuAxisSeries(perImu);
         setSamples(rows);
         setDuration(formatDurationFromMs(durMs));
       }
@@ -344,7 +380,7 @@ export default function SetAnalyticsScreen() {
 }, [setId, isSqlite]);
 
   const baseWidth = screenWidth - 32;
-  const displayMaxPoints = 2000;
+  const displayMaxPoints = 300;
 
   const emgSeries = emgChannelSeries[selectedEmgChannel];
 
@@ -354,28 +390,76 @@ export default function SetAnalyticsScreen() {
     return downsampleMinMax(env, displayMaxPoints);
   }, [emgSeries]);
 
-  const displayImu = useMemo(() => {
-    const smoothed = movingAverageSmooth(imuSeries, 10);
+  const processImuAxis = useCallback((key: ImuAxisKey) => {
+    const smoothed = movingAverageSmooth(imuAxisSeries[key], 10);
     const env = emaSmooth(smoothed, 0.25);
     return downsampleMinMax(env, displayMaxPoints);
-  }, [imuSeries]);
+  }, [imuAxisSeries]);
 
+  const imuSideKeys = useMemo(
+    () => IMU_AXES.map((a) => (selectedImuSide === "left" ? a.leftKey : a.rightKey)),
+    [selectedImuSide]
+  );
+
+  const displayImuAxes = useMemo(
+    () => imuSideKeys.map((key) => processImuAxis(key)),
+    [imuSideKeys, processImuAxis]
+  );
+
+  const imuReferenceAxis = useMemo(() => displayImuAxes[0] ?? [], [displayImuAxes]);
+
+  const MAX_CHART_WIDTH = 2400;
   const emgChartWidth = useMemo(
-    () => Math.max(baseWidth, displayEmg.length * 6),
+    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, displayEmg.length * 4)),
     [baseWidth, displayEmg.length]
   );
   const imuChartWidth = useMemo(
-    () => Math.max(baseWidth, displayImu.length * 6),
-    [baseWidth, displayImu.length]
+    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, imuReferenceAxis.length * 4)),
+    [baseWidth, imuReferenceAxis.length]
   );
 
-  const selectedDisplay = metric === "force" ? displayEmg : displayImu;
-  const selectedChartWidth = metric === "force" ? emgChartWidth : imuChartWidth;
-  const selectedSeries = useMemo(() => selectedDisplay.map((p) => p.value), [selectedDisplay]);
+  const emgSelectedSeries = useMemo(() => displayEmg.map((p) => p.value), [displayEmg]);
+
+  const emgChartLabels = useMemo(() => {
+    if (displayEmg.length === 0) return [];
+    const t0 = displayEmg[0].time;
+    const step = Math.max(1, Math.floor(displayEmg.length / 8));
+    return displayEmg.map((p, i) => {
+      if (i % step === 0 || i === displayEmg.length - 1) {
+        return ((p.time - t0) / 1000).toFixed(1);
+      }
+      return "";
+    });
+  }, [displayEmg]);
+
+  const imuChartLabels = useMemo(() => {
+    if (imuReferenceAxis.length === 0) return [];
+    const t0 = imuReferenceAxis[0].time;
+    const step = Math.max(1, Math.floor(imuReferenceAxis.length / 8));
+    return imuReferenceAxis.map((p, i) => {
+      if (i % step === 0 || i === imuReferenceAxis.length - 1) {
+        return ((p.time - t0) / 1000).toFixed(1);
+      }
+      return "";
+    });
+  }, [imuReferenceAxis]);
+
+  const imuDatasets = useMemo(() => {
+    const minLen = Math.min(...displayImuAxes.map((a) => a.length));
+    if (minLen < 2) return null;
+    return {
+      labels: imuChartLabels,
+      datasets: IMU_AXES.map((axis, i) => ({
+        data: displayImuAxes[i].slice(0, minLen).map((p) => p.value),
+        color: (opacity = 1) => axis.color.replace(",1)", `,${clamp01(opacity)})`),
+        strokeWidth: 2,
+      })),
+    };
+  }, [displayImuAxes, imuChartLabels]);
+
   const emgChannelLabel = EMG_CHANNELS.find((c) => c.key === selectedEmgChannel)?.label ?? "";
-  const selectedTitle = metric === "force"
-    ? `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`
-    : "Gyro X Over Time (Shoulder Flare)";
+  const emgTitle = `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`;
+  const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} IMU – Roll / Pitch / Yaw`;
 
   const channelValues = useMemo(
     () => emgSeries.map((p) => p.value).filter((v) => Number.isFinite(v)),
@@ -387,10 +471,13 @@ export default function SetAnalyticsScreen() {
     return channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
   }, [channelValues]);
 
-  const maxEmg = useMemo(
-    () => (channelValues.length ? Math.max(...channelValues) : 0),
-    [channelValues]
-  );
+  const maxEmg = useMemo(() => {
+    let mx = 0;
+    for (let i = 0; i < channelValues.length; i++) {
+      if (channelValues[i] > mx) mx = channelValues[i];
+    }
+    return mx;
+  }, [channelValues]);
 
   const consistency = useMemo(() => {
     if (channelValues.length < 2) return 0;
@@ -485,7 +572,7 @@ export default function SetAnalyticsScreen() {
               merged rows {"\u2022"} EMG{" "}
               <Text style={{ color: colors.onSurface, fontWeight: "800" }}>{emgSeries.length}</Text>{" "}
               {"\u2022"} IMU{" "}
-              <Text style={{ color: colors.onSurface, fontWeight: "800" }}>{imuSeries.length}</Text>
+              <Text style={{ color: colors.onSurface, fontWeight: "800" }}>{imuReferenceAxis.length}</Text>
             </Text>
           </View>
 
@@ -551,12 +638,36 @@ export default function SetAnalyticsScreen() {
           </Card>
         )}
 
-        {/* Chart */}
-        {selectedSeries.length >= 2 && (
+        {/* IMU side selector */}
+        {metric === "imu" && (
+          <Card style={styles.segment} mode="outlined">
+            <Card.Content style={styles.segmentContent}>
+              {([["left", "Left IMU"], ["right", "Right IMU"]] as const).map(([side, lbl]) => {
+                const active = selectedImuSide === side;
+                return (
+                  <Button
+                    key={side}
+                    mode={active ? "contained" : "outlined"}
+                    onPress={() => setSelectedImuSide(side)}
+                    compact
+                    style={{ flex: 1 }}
+                    buttonColor={active ? colors.primary : undefined}
+                    textColor={active ? "#fff" : colors.onSurface}
+                  >
+                    {lbl}
+                  </Button>
+                );
+              })}
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* EMG Chart */}
+        {metric === "force" && emgSelectedSeries.length >= 2 && (
           <Card style={styles.chartCard} mode="outlined">
             <Card.Content>
               <Text variant="titleSmall" style={{ marginBottom: 10 }}>
-                {selectedTitle}
+                {emgTitle}
               </Text>
               <ScrollView
                 horizontal
@@ -576,7 +687,7 @@ export default function SetAnalyticsScreen() {
                           textAlign: "center",
                         }}
                       >
-                        {metric === "force" ? (mvcValue > 0 ? "% MVC" : "EMG (a.u.)") : "Gyro X (deg/s)"}
+                        {mvcValue > 0 ? "% MVC" : "EMG (a.u.)"}
                       </Text>
                     </View>
                     <ScrollView
@@ -586,24 +697,78 @@ export default function SetAnalyticsScreen() {
                     >
                       <LineChart
                         data={{
-                          labels: (() => {
-                            if (selectedDisplay.length === 0) return [];
-                            const t0 = selectedDisplay[0].time;
-                            let next = 0;
-                            return selectedDisplay.map((p, i) => {
-                              const rel = p.time - t0;
-                              if (i === 0) return "0.00";
-                              if (rel >= next + 500) {
-                                next += 500;
-                                return (next / 1000).toFixed(2);
-                              }
-                              if (i === selectedDisplay.length - 1) return (rel / 1000).toFixed(2);
-                              return "";
-                            });
-                          })(),
-                          datasets: [{ data: selectedSeries as any }],
+                          labels: emgChartLabels,
+                          datasets: [{ data: emgSelectedSeries as any }],
                         }}
-                        width={selectedChartWidth}
+                        width={emgChartWidth}
+                        height={220}
+                        withDots={false}
+                        withShadow={false}
+                        withInnerLines
+                        withOuterLines={false}
+                        chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                        style={{ borderRadius: 12 }}
+                      />
+                    </ScrollView>
+                  </View>
+                  <Text
+                    variant="labelSmall"
+                    style={{ marginTop: 10, color: colors.onSurfaceVariant, textAlign: "center" }}
+                  >
+                    Time (s)
+                  </Text>
+                </View>
+              </ScrollView>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* IMU Chart – roll / pitch / yaw overlay */}
+        {metric === "imu" && imuDatasets && (
+          <Card style={styles.chartCard} mode="outlined">
+            <Card.Content>
+              <Text variant="titleSmall" style={{ marginBottom: 4 }}>
+                {imuTitle}
+              </Text>
+
+              <View style={styles.imuLegend}>
+                {IMU_AXES.map((a) => (
+                  <View key={a.axis} style={styles.imuLegendItem}>
+                    <View style={[styles.imuLegendDot, { backgroundColor: a.color }]} />
+                    <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>{a.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator
+                indicatorStyle={dark ? "white" : "black"}
+                contentContainerStyle={{ paddingBottom: 6 }}
+              >
+                <View style={{ marginTop: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View style={{ width: 18, alignItems: "center", marginRight: 8 }}>
+                      <Text
+                        style={{
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                          transform: [{ rotate: "-90deg" }],
+                          width: 220,
+                          textAlign: "center",
+                        }}
+                      >
+                        Degrees
+                      </Text>
+                    </View>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator
+                      indicatorStyle={dark ? "white" : "black"}
+                    >
+                      <LineChart
+                        data={imuDatasets}
+                        width={imuChartWidth}
                         height={220}
                         withDots={false}
                         withShadow={false}
@@ -787,4 +952,7 @@ const styles = StyleSheet.create({
   },
   insightIndexText: { color: "#1d4ed8", fontSize: 12, fontWeight: "800" },
   nextCard: { borderRadius: 12, marginTop: 16 },
+  imuLegend: { flexDirection: "row", gap: 12, marginBottom: 4 },
+  imuLegendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  imuLegendDot: { width: 10, height: 10, borderRadius: 5 },
 });
