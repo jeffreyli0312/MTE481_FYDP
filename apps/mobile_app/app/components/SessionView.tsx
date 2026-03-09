@@ -16,15 +16,15 @@ import {
   endSet as dbEndSet,
   endSession as dbEndSession,
   insertSample,
-  parsePacket,
-  countSamplesForSet,
-  getLatestCalibration,
-  saveBaselineOffsets,
-  insertRep,
-  updateSetRepCount,
-  type CalibrationRow,
-  type EmgChannel,
-} from "../sqlite/bleDb";
+    parsePacket,
+    countSamplesForSet,
+    getLatestCalibration,
+    saveBaselineOffsets,
+    insertRep,
+    updateSetRepCount,
+    type CalibrationRow,
+    type EmgChannel,
+  } from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
 interface SessionViewProps {
@@ -59,42 +59,29 @@ export default function SessionView({
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
 
   // Baseline offset per EMG channel (subtracted from every sample)
-  const emgOffsetRef = useRef({
-    emg_left_tricep: 0,
-    emg_left_pec: 0,
-    emg_right_tricep: 0,
-    emg_right_pec: 0,
-  });
-  const baselineSamplesRef = useRef<{
-    emg_left_tricep: number[];
-    emg_left_pec: number[];
-    emg_right_tricep: number[];
-    emg_right_pec: number[];
-  }>({
-    emg_left_tricep: [],
-    emg_left_pec: [],
-    emg_right_tricep: [],
-    emg_right_pec: [],
-  });
+  const emgOffsetRef = useRef({ emg_left_tricep: 0, emg_left_pec: 0, emg_right_tricep: 0, emg_right_pec: 0 });
+  const baselineSamplesRef = useRef<{ emg_left_tricep: number[]; emg_left_pec: number[]; emg_right_tricep: number[]; emg_right_pec: number[] }>({ emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [] });
   const baselineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // MVC calibration + Schmitt trigger rep counter
+  // MVC calibration (still used for per-rep EMG metrics)
   const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
+  const mvcValue = calibration?.mvc_value ?? 0;
+  const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
+
+  // Pitch-based Schmitt trigger rep counter (uses left IMU)
+  const PITCH_UPPER_THRESHOLD = 15; // degrees deviation from rest to start a rep
+  const PITCH_LOWER_THRESHOLD = 5;  // degrees deviation from rest to end a rep
   const [repCount, setRepCount] = useState(0);
   const repCountRef = useRef(0);
   const schmittStateRef = useRef<"low" | "high">("low");
-  const emgMaRef = useRef(new MovingAverage(10));
+  const pitchMaRef = useRef(new MovingAverage(10));
+  const restingPitchRef = useRef(0);
+  const pitchBaselineSamplesRef = useRef<number[]>([]);
 
-  // Per-rep timestamp tracking
+  // Per-rep tracking
   const repStartMsRef = useRef(0);
   const repEmgAccRef = useRef<number[]>([]);
-  const repPeakRef = useRef(0);
-
-  const mvcValue = calibration?.mvc_value ?? 0;
-  const calibratedChannel = (calibration?.emg_channel ??
-    "emg_left_pec") as EmgChannel;
-  const upperThreshold = mvcValue * 0.4;
-  const lowerThreshold = mvcValue * 0.2;
+  const repPeakEmgRef = useRef(0);
 
   // Load calibration on mount — session row is NOT inserted until first set starts
   useEffect(() => {
@@ -114,6 +101,7 @@ export default function SessionView({
     return () => clearInterval(interval);
   }, [setTimerRunning]);
 
+
   async function handleBack() {
     setIsRecording(false);
     setIsBaseline(false);
@@ -129,12 +117,7 @@ export default function SessionView({
   }
 
   const BASELINE_DURATION_MS = 2000;
-  const EMG_KEYS = [
-    "emg_left_tricep",
-    "emg_left_pec",
-    "emg_right_tricep",
-    "emg_right_pec",
-  ] as const;
+  const EMG_KEYS = ["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const;
 
   function startRecording() {
     const setId = `set_${Date.now()}`;
@@ -159,10 +142,12 @@ export default function SessionView({
 
     repCountRef.current = 0;
     schmittStateRef.current = "low";
-    emgMaRef.current.reset();
+    pitchMaRef.current.reset();
+    restingPitchRef.current = 0;
+    pitchBaselineSamplesRef.current = [];
     repStartMsRef.current = 0;
     repEmgAccRef.current = [];
-    repPeakRef.current = 0;
+    repPeakEmgRef.current = 0;
     setRepCount(0);
     setSampleCount(0);
     setSetSeconds(0);
@@ -184,6 +169,7 @@ export default function SessionView({
         for (const k of EMG_KEYS) {
           baselineSamplesRef.current[k].push(parsed[k]);
         }
+        pitchBaselineSamplesRef.current.push(parsed.l_pitch);
       }
     });
 
@@ -205,14 +191,21 @@ export default function SessionView({
     // Compute mean offset per channel
     for (const k of EMG_KEYS) {
       const arr = baselineSamplesRef.current[k];
-      emgOffsetRef.current[k] =
-        arr.length > 0 ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+      emgOffsetRef.current[k] = arr.length > 0
+        ? arr.reduce((s, v) => s + v, 0) / arr.length
+        : 0;
     }
 
     // Persist offsets so analytics pages can apply them
     if (currentSetIdRef.current) {
       saveBaselineOffsets(currentSetIdRef.current, emgOffsetRef.current);
     }
+
+    // Compute resting pitch from baseline samples
+    const pitchArr = pitchBaselineSamplesRef.current;
+    restingPitchRef.current = pitchArr.length > 0
+      ? pitchArr.reduce((s, v) => s + v, 0) / pitchArr.length
+      : 0;
 
     setIsBaseline(false);
     setIsRecording(true);
@@ -230,50 +223,48 @@ export default function SessionView({
           insertSample({ userId, sessionId: sid, setId: setIdCurrent, parsed });
           count++;
 
-          if (mvcValue > 0) {
-            const corrected = Math.max(
-              0,
-              parsed[calibratedChannel] -
-                emgOffsetRef.current[calibratedChannel],
-            );
-            const emgVal = emgMaRef.current.push(corrected);
+          // Pitch-based rep detection using left IMU
+          const smoothedPitch = pitchMaRef.current.push(parsed.l_pitch);
+          const pitchDelta = Math.abs(smoothedPitch - restingPitchRef.current);
 
-            if (schmittStateRef.current === "low" && emgVal >= upperThreshold) {
-              schmittStateRef.current = "high";
-              repStartMsRef.current = parsed.t_ms;
-              repEmgAccRef.current = [corrected];
-              repPeakRef.current = corrected;
-            } else if (schmittStateRef.current === "high") {
-              repEmgAccRef.current.push(corrected);
-              if (corrected > repPeakRef.current)
-                repPeakRef.current = corrected;
+          // Track EMG during the rep for per-rep metrics
+          const correctedEmg = mvcValue > 0
+            ? Math.max(0, parsed[calibratedChannel] - emgOffsetRef.current[calibratedChannel])
+            : 0;
 
-              if (emgVal <= lowerThreshold) {
-                schmittStateRef.current = "low";
-                repCountRef.current += 1;
+          if (schmittStateRef.current === "low" && pitchDelta >= PITCH_UPPER_THRESHOLD) {
+            schmittStateRef.current = "high";
+            repStartMsRef.current = parsed.t_ms;
+            repEmgAccRef.current = [correctedEmg];
+            repPeakEmgRef.current = correctedEmg;
+          } else if (schmittStateRef.current === "high") {
+            repEmgAccRef.current.push(correctedEmg);
+            if (correctedEmg > repPeakEmgRef.current) repPeakEmgRef.current = correctedEmg;
 
-                const acc = repEmgAccRef.current;
-                const meanEmg =
-                  acc.length > 0
-                    ? acc.reduce((s, v) => s + v, 0) / acc.length
-                    : 0;
+            if (pitchDelta <= PITCH_LOWER_THRESHOLD) {
+              schmittStateRef.current = "low";
+              repCountRef.current += 1;
 
-                insertRep({
-                  setId: setIdCurrent,
-                  repNumber: repCountRef.current,
-                  startMs: repStartMsRef.current,
-                  endMs: parsed.t_ms,
-                  peakEmg: repPeakRef.current,
-                  meanEmg,
-                });
-              }
+              const acc = repEmgAccRef.current;
+              const meanEmg = acc.length > 0
+                ? acc.reduce((s, v) => s + v, 0) / acc.length
+                : 0;
+
+              insertRep({
+                setId: setIdCurrent,
+                repNumber: repCountRef.current,
+                startMs: repStartMsRef.current,
+                endMs: parsed.t_ms,
+                peakEmg: repPeakEmgRef.current,
+                meanEmg,
+              });
             }
           }
         }
       }
       if (count > 0) {
         setSampleCount((prev) => prev + count);
-        if (mvcValue > 0) setRepCount(repCountRef.current);
+        setRepCount(repCountRef.current);
       }
     });
   }
@@ -371,15 +362,7 @@ export default function SessionView({
                   Baseline
                 </Badge>
               </View>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  marginBottom: 8,
-                }}
-              >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}>
                 <Feather name="mic-off" size={18} color={colors.primary} />
                 <Text
                   variant="titleMedium"
@@ -390,11 +373,7 @@ export default function SessionView({
               </View>
               <Text
                 variant="bodySmall"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  textAlign: "center",
-                  marginBottom: 12,
-                }}
+                style={{ color: colors.onSurfaceVariant, textAlign: "center", marginBottom: 12 }}
               >
                 Capturing noise floor for 2 seconds
               </Text>
@@ -435,30 +414,24 @@ export default function SessionView({
                 Set Duration
               </Text>
 
-              {mvcValue > 0 && (
-                <View style={{ alignItems: "center", marginTop: 12 }}>
-                  <Text
-                    variant="displayMedium"
-                    style={{ color: colors.primary, fontWeight: "900" }}
-                  >
-                    {repCount}
-                  </Text>
-                  <Text
-                    variant="labelLarge"
-                    style={{ color: colors.onSurfaceVariant }}
-                  >
-                    Reps
-                  </Text>
-                </View>
-              )}
+              <View style={{ alignItems: "center", marginTop: 12 }}>
+                <Text
+                  variant="displayMedium"
+                  style={{ color: colors.primary, fontWeight: "900" }}
+                >
+                  {repCount}
+                </Text>
+                <Text
+                  variant="labelLarge"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
+                  Reps
+                </Text>
+              </View>
 
               <Text
                 variant="labelSmall"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  textAlign: "center",
-                  marginTop: 8,
-                }}
+                style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 8 }}
               >
                 {sampleCount} samples saved to DB
               </Text>
@@ -598,8 +571,7 @@ export default function SessionView({
                     variant="bodySmall"
                     style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
                   >
-                    {set.durationSec}s · {set.sampleCount} samples
-                    {set.repCount > 0 ? ` · ${set.repCount} reps` : ""}
+                    {set.durationSec}s · {set.sampleCount} samples{set.repCount > 0 ? ` · ${set.repCount} reps` : ""}
                   </Text>
                 </View>
 
