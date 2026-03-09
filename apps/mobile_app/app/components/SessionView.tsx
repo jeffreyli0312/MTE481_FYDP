@@ -548,19 +548,6 @@ export default function SessionView({
                     {set.durationSec}s · {set.sampleCount} samples{set.repCount > 0 ? ` · ${set.repCount} reps` : ""}
                   </Text>
                 </View>
-
-                <View style={styles.inlineRow}>
-                  <Feather
-                    name="bar-chart-2"
-                    size={16}
-                    color={colors.primary}
-                  />
-                  <Feather
-                    name="chevron-right"
-                    size={16}
-                    color={colors.onSurfaceVariant}
-                  />
-                </View>
               </Card.Content>
             </Card>
           ))}
