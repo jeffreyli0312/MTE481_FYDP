@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   ScrollView,
@@ -8,9 +8,10 @@ import {
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
+import { Card, Text, Button, ActivityIndicator, DataTable } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { LineChart } from "react-native-chart-kit";
+import { LineChart, BarChart } from "react-native-chart-kit";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -19,6 +20,8 @@ import {
   listSamplesForSet,
   getLatestCalibration,
   getBaselineOffsets,
+  listRepsForSet,
+  type RepRow,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth } from "../utils/format";
@@ -175,6 +178,7 @@ export default function SetAnalyticsScreen() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [samples, setSamples] = useState<SampleRow[]>([]);
+  const [reps, setReps] = useState<RepRow[]>([]);
   const [duration, setDuration] = useState("0m 0s");
   const [emgChannelSeries, setEmgChannelSeries] = useState<Record<EmgChannelKey, Point[]>>({
     emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [],
@@ -270,8 +274,11 @@ export default function SetAnalyticsScreen() {
             ? lastTime - firstTime
             : 0;
 
+        const repRows = listRepsForSet(setId);
+
         if (!cancelled) {
           setSamples(rows);
+          setReps(repRows);
           setEmgChannelSeries(perChannel);
           setImuAxisSeries(perImu);
           setDuration(formatDurationFromMs(durMs));
@@ -408,15 +415,25 @@ export default function SetAnalyticsScreen() {
 
   const imuReferenceAxis = useMemo(() => displayImuAxes[0] ?? [], [displayImuAxes]);
 
-  const MAX_CHART_WIDTH = 2400;
-  const emgChartWidth = useMemo(
-    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, displayEmg.length * 4)),
-    [baseWidth, displayEmg.length]
-  );
-  const imuChartWidth = useMemo(
-    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, imuReferenceAxis.length * 4)),
-    [baseWidth, imuReferenceAxis.length]
-  );
+  const [emgZoom, setEmgZoom] = useState(1);
+  const [imuZoom, setImuZoom] = useState(1);
+  const emgZoomBase = useRef(1);
+  const imuZoomBase = useRef(1);
+
+  const emgPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { emgZoomBase.current = emgZoom; })
+      .onUpdate((e) => { setEmgZoom(Math.max(1, Math.min(10, emgZoomBase.current * e.scale))); })
+  , [emgZoom]);
+
+  const imuPinch = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => { imuZoomBase.current = imuZoom; })
+      .onUpdate((e) => { setImuZoom(Math.max(1, Math.min(10, imuZoomBase.current * e.scale))); })
+  , [imuZoom]);
+
+  const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
+  const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
 
   const emgSelectedSeries = useMemo(() => displayEmg.map((p) => p.value), [displayEmg]);
 
@@ -479,17 +496,46 @@ export default function SetAnalyticsScreen() {
     return mx;
   }, [channelValues]);
 
-  const consistency = useMemo(() => {
-    if (channelValues.length < 2) return 0;
-    const mean = channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
-    if (mean === 0) return 0;
-    const variance = channelValues.reduce((s, v) => s + (v - mean) ** 2, 0) / channelValues.length;
-    const cv = (Math.sqrt(variance) / mean) * 100;
-    const score = Math.max(0, Math.min(100, Math.round(100 - cv)));
-    return score;
-  }, [channelValues]);
+  // --- Per-rep derived metrics ---
 
-  const consistencyLabel = consistency > 80 ? "Excellent" : consistency > 60 ? "Good" : "Needs Work";
+  const avgRepTime = useMemo(() => {
+    const valid = reps.filter((r) => r.end_ms != null);
+    if (valid.length === 0) return 0;
+    const total = valid.reduce((s, r) => s + (r.end_ms! - r.start_ms), 0);
+    return total / valid.length;
+  }, [reps]);
+
+  const avgRestTime = useMemo(() => {
+    const valid = reps.filter((r) => r.end_ms != null);
+    if (valid.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < valid.length; i++) {
+      total += valid[i].start_ms - valid[i - 1].end_ms!;
+    }
+    return total / (valid.length - 1);
+  }, [reps]);
+
+  const fatigueIndex = useMemo(() => {
+    const valid = reps.filter((r) => r.peak_emg != null && r.peak_emg > 0);
+    if (valid.length < 2) return null;
+    const first = valid[0].peak_emg!;
+    const last = valid[valid.length - 1].peak_emg!;
+    return Math.round(((first - last) / first) * 100);
+  }, [reps]);
+
+  const maxFlare = useMemo(() => {
+    const yawKey: ImuAxisKey = selectedImuSide === "left" ? "l_yaw" : "r_yaw";
+    const series = imuAxisSeries[yawKey];
+    if (series.length === 0) return 0;
+    let mx = 0;
+    for (const p of series) {
+      const abs = Math.abs(p.value);
+      if (abs > mx) mx = abs;
+    }
+    return Math.round(mx * 10) / 10;
+  }, [imuAxisSeries, selectedImuSide]);
+
+  const FLARE_THRESHOLD = 15;
 
   const chartConfig = useMemo(
     () => ({
@@ -583,14 +629,6 @@ export default function SetAnalyticsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}>
-        {/* Overview Cards */}
-        <View style={styles.statsGrid}>
-          <StatCard title="Duration" value={duration} />
-          <StatCard title="Channel" value={emgChannelLabel} />
-          <StatCard title="Avg EMG" value={avgEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
-          <StatCard title="Peak EMG" value={maxEmg.toFixed(2)} unit={mvcValue > 0 ? "%" : ""} />
-        </View>
-
         {/* Chart type selector */}
         <Card style={styles.segment} mode="outlined">
           <Card.Content style={styles.segmentContent}>
@@ -666,59 +704,55 @@ export default function SetAnalyticsScreen() {
         {metric === "force" && emgSelectedSeries.length >= 2 && (
           <Card style={styles.chartCard} mode="outlined">
             <Card.Content>
-              <Text variant="titleSmall" style={{ marginBottom: 10 }}>
+              <Text variant="titleSmall" style={{ marginBottom: 4 }}>
                 {emgTitle}
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                indicatorStyle={dark ? "white" : "black"}
-                contentContainerStyle={{ paddingBottom: 6 }}
-              >
-                <View style={{ marginTop: 10 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{ width: 18, alignItems: "center", marginRight: 8 }}>
-                      <Text
-                        style={{
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                          transform: [{ rotate: "-90deg" }],
-                          width: 220,
-                          textAlign: "center",
-                        }}
-                      >
-                        {mvcValue > 0 ? "% MVC" : "EMG (a.u.)"}
-                      </Text>
-                    </View>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator
-                      indicatorStyle={dark ? "white" : "black"}
-                    >
-                      <LineChart
-                        data={{
-                          labels: emgChartLabels,
-                          datasets: [{ data: emgSelectedSeries as any }],
-                        }}
-                        width={emgChartWidth}
-                        height={220}
-                        withDots={false}
-                        withShadow={false}
-                        withInnerLines
-                        withOuterLines={false}
-                        chartConfig={{ ...chartConfig, paddingRight: 12 }}
-                        style={{ borderRadius: 12 }}
-                      />
-                    </ScrollView>
-                  </View>
-                  <Text
-                    variant="labelSmall"
-                    style={{ marginTop: 10, color: colors.onSurfaceVariant, textAlign: "center" }}
-                  >
-                    Time (s)
+              {emgZoom > 1 && (
+                <Pressable onPress={() => setEmgZoom(1)}>
+                  <Text variant="labelSmall" style={{ color: colors.primary, marginBottom: 4 }}>
+                    {emgZoom.toFixed(1)}x — tap to reset
                   </Text>
-                </View>
-              </ScrollView>
+                </Pressable>
+              )}
+              <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginBottom: 6 }}>
+                Pinch to zoom
+              </Text>
+              <GestureDetector gesture={emgPinch}>
+                <ScrollView
+                  horizontal
+                  scrollEnabled={emgZoom > 1}
+                  showsHorizontalScrollIndicator={emgZoom > 1}
+                  indicatorStyle={dark ? "white" : "black"}
+                >
+                  <LineChart
+                    data={{
+                      labels: emgChartLabels,
+                      datasets: [
+                        { data: emgSelectedSeries as any },
+                        { data: [100], withDots: false, color: () => "transparent" },
+                      ],
+                    }}
+                    width={emgChartWidth}
+                    height={220}
+                    withDots={false}
+                    withShadow={false}
+                    withInnerLines
+                    withOuterLines={false}
+                    fromZero
+                    segments={5}
+                    yAxisSuffix={mvcValue > 0 ? "%" : ""}
+                    yAxisLabel=""
+                    chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                    style={{ borderRadius: 12 }}
+                  />
+                </ScrollView>
+              </GestureDetector>
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Time (s)
+              </Text>
             </Card.Content>
           </Card>
         )}
@@ -740,119 +774,148 @@ export default function SetAnalyticsScreen() {
                 ))}
               </View>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator
-                indicatorStyle={dark ? "white" : "black"}
-                contentContainerStyle={{ paddingBottom: 6 }}
-              >
-                <View style={{ marginTop: 10 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{ width: 18, alignItems: "center", marginRight: 8 }}>
-                      <Text
-                        style={{
-                          color: colors.onSurfaceVariant,
-                          fontSize: 12,
-                          transform: [{ rotate: "-90deg" }],
-                          width: 220,
-                          textAlign: "center",
-                        }}
-                      >
-                        Degrees
-                      </Text>
-                    </View>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator
-                      indicatorStyle={dark ? "white" : "black"}
-                    >
-                      <LineChart
-                        data={imuDatasets}
-                        width={imuChartWidth}
-                        height={220}
-                        withDots={false}
-                        withShadow={false}
-                        withInnerLines
-                        withOuterLines={false}
-                        chartConfig={{ ...chartConfig, paddingRight: 12 }}
-                        style={{ borderRadius: 12 }}
-                      />
-                    </ScrollView>
-                  </View>
-                  <Text
-                    variant="labelSmall"
-                    style={{ marginTop: 10, color: colors.onSurfaceVariant, textAlign: "center" }}
-                  >
-                    Time (s)
+              {imuZoom > 1 && (
+                <Pressable onPress={() => setImuZoom(1)}>
+                  <Text variant="labelSmall" style={{ color: colors.primary, marginBottom: 4 }}>
+                    {imuZoom.toFixed(1)}x — tap to reset
                   </Text>
-                </View>
-              </ScrollView>
+                </Pressable>
+              )}
+              <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginBottom: 6 }}>
+                Pinch to zoom
+              </Text>
+              <GestureDetector gesture={imuPinch}>
+                <ScrollView
+                  horizontal
+                  scrollEnabled={imuZoom > 1}
+                  showsHorizontalScrollIndicator={imuZoom > 1}
+                  indicatorStyle={dark ? "white" : "black"}
+                >
+                  <LineChart
+                    data={imuDatasets}
+                    width={imuChartWidth}
+                    height={220}
+                    withDots={false}
+                    withShadow={false}
+                    withInnerLines
+                    withOuterLines={false}
+                    yAxisLabel=""
+                    yAxisSuffix={"\u00B0"}
+                    chartConfig={{ ...chartConfig, paddingRight: 12 }}
+                    style={{ borderRadius: 12 }}
+                  />
+                </ScrollView>
+              </GestureDetector>
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Time (s)
+              </Text>
             </Card.Content>
           </Card>
         )}
 
-        {/* Consistency */}
-        <Card style={styles.consistencyCard}>
-          <Card.Content>
-            <Text style={styles.consistencyTitle}>
-              {"\u26A1"} Consistency Score
-            </Text>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-              <View>
-                <Text style={styles.consistencyValue}>{consistency}%</Text>
-                <Text style={styles.consistencyLabel}>{consistencyLabel}</Text>
-              </View>
-              <Text style={styles.consistencySideText}>
-                {emgChannelLabel} signal{"\n"}stability (CV)
+        {/* Overview Cards */}
+        <View style={[styles.statsGrid, { marginTop: 16 }]}>
+          <StatCard title="Duration" value={duration} />
+          <StatCard title="Reps" value={reps.length > 0 ? String(reps.length) : "--"} />
+          <StatCard title="Avg Rep Time" value={avgRepTime > 0 ? `${(avgRepTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg Rest Time" value={avgRestTime > 0 ? `${(avgRestTime / 1000).toFixed(1)}s` : "--"} />
+          <StatCard title="Avg EMG" value={avgEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard title="Peak EMG" value={maxEmg.toFixed(1)} unit={mvcValue > 0 ? "%" : ""} />
+          <StatCard
+            title="Fatigue"
+            value={fatigueIndex != null ? `${fatigueIndex}%` : "--"}
+            color={
+              fatigueIndex == null ? undefined
+                : fatigueIndex > 40 ? "#ef4444"
+                : fatigueIndex > 20 ? "#f59e0b"
+                : "#22c55e"
+            }
+          />
+          <StatCard
+            title="Max Flare"
+            value={`${maxFlare}\u00B0`}
+            color={maxFlare > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
+          />
+        </View>
+
+        {/* Per-rep bar chart */}
+        {reps.length >= 2 && (
+          <Card style={styles.chartCard} mode="outlined">
+            <Card.Content>
+              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                Peak EMG Per Rep
               </Text>
-            </View>
-          </Card.Content>
-        </Card>
+              <BarChart
+                data={{
+                  labels: reps.map((r) => `${r.rep_number}`),
+                  datasets: [{
+                    data: reps.map((r) => r.peak_emg ?? 0),
+                  }],
+                }}
+                width={baseWidth - 32}
+                height={180}
+                fromZero
+                showValuesOnTopOfBars
+                withInnerLines={false}
+                yAxisSuffix={mvcValue > 0 ? "%" : ""}
+                yAxisLabel=""
+                chartConfig={{
+                  ...chartConfig,
+                  barPercentage: 0.6,
+                  decimalPlaces: 0,
+                }}
+                style={{ borderRadius: 12 }}
+              />
+              <Text
+                variant="labelSmall"
+                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
+              >
+                Rep #
+              </Text>
+            </Card.Content>
+          </Card>
+        )}
 
-        {/* Insights */}
-        <Card
-          style={[styles.insightCard, { borderColor: dark ? "#1d4ed8" : "#bfdbfe" }]}
-          mode="outlined"
-        >
-          <Card.Content>
-            <Text variant="titleSmall" style={{ marginBottom: 10 }}>
-              {"\uD83D\uDCA1"} Performance Insights
-            </Text>
-            <Insight
-              index={1}
-              text="Your force output varied significantly. Focus on maintaining consistent form and tempo throughout the set."
-            />
-            <Insight
-              index={2}
-              text="If this set felt difficult, consider adding more rest time before your next set."
-            />
-            <Insight
-              index={3}
-              text="Prioritize technique first. Then scale load once your movement pattern stays stable."
-            />
-          </Card.Content>
-        </Card>
-
-        {/* Next Steps */}
-        <Card
-          style={[
-            styles.nextCard,
-            {
-              backgroundColor: dark ? "#0b2b1a" : "#ecfdf5",
-              borderColor: dark ? "#14532d" : "#bbf7d0",
-            },
-          ]}
-          mode="outlined"
-        >
-          <Card.Content>
-            <Text variant="titleSmall" style={{ color: dark ? "#d1fae5" : "#065f46", marginBottom: 8 }}>
-              Next Steps
-            </Text>
-            <Bullet text="Rest 2\u20133 minutes before your next set if your goal is strength." color={dark ? "#d1fae5" : "#064e3b"} />
-            <Bullet text="Keep a consistent tempo for cleaner comparisons across sets." color={dark ? "#d1fae5" : "#064e3b"} />
-            <Bullet text="If you see major force drops, reduce load slightly or increase rest." color={dark ? "#d1fae5" : "#064e3b"} />
-          </Card.Content>
-        </Card>
+        {/* Per-rep breakdown table */}
+        {reps.length > 0 && (
+          <Card style={{ borderRadius: 12, marginTop: 16 }} mode="outlined">
+            <Card.Content>
+              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
+                Rep Breakdown
+              </Text>
+              <DataTable>
+                <DataTable.Header>
+                  <DataTable.Title style={{ flex: 0.5 }}>#</DataTable.Title>
+                  <DataTable.Title numeric>Duration</DataTable.Title>
+                  <DataTable.Title numeric>Peak</DataTable.Title>
+                  <DataTable.Title numeric>Mean</DataTable.Title>
+                </DataTable.Header>
+                {reps.map((r) => {
+                  const dur = r.end_ms != null ? r.end_ms - r.start_ms : null;
+                  return (
+                    <DataTable.Row key={r.id}>
+                      <DataTable.Cell style={{ flex: 0.5 }}>{r.rep_number}</DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {dur != null ? `${(dur / 1000).toFixed(1)}s` : "--"}
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {r.peak_emg != null ? r.peak_emg.toFixed(1) : "--"}
+                        {r.peak_emg != null && mvcValue > 0 ? "%" : ""}
+                      </DataTable.Cell>
+                      <DataTable.Cell numeric>
+                        {r.mean_emg != null ? r.mean_emg.toFixed(1) : "--"}
+                        {r.mean_emg != null && mvcValue > 0 ? "%" : ""}
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  );
+                })}
+              </DataTable>
+            </Card.Content>
+          </Card>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -863,10 +926,12 @@ function StatCard({
   title,
   value,
   unit,
+  color,
 }: {
   title: string;
   value: string;
   unit?: string;
+  color?: string;
 }) {
   const { colors } = useAppTheme();
   return (
@@ -875,7 +940,7 @@ function StatCard({
         <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
           {title}
         </Text>
-        <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "800", marginTop: 6 }}>
+        <Text variant="titleLarge" style={{ color: color ?? colors.onSurface, fontWeight: "800", marginTop: 6 }}>
           {value}
           {unit ? (
             <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
@@ -889,28 +954,6 @@ function StatCard({
   );
 }
 
-function Insight({ index, text }: { index: number; text: string }) {
-  const { colors } = useAppTheme();
-  return (
-    <View style={styles.insightRow}>
-      <View style={styles.insightIndex}>
-        <Text style={styles.insightIndexText}>{index}</Text>
-      </View>
-      <Text variant="bodySmall" style={{ flex: 1, color: colors.onSurface, lineHeight: 18 }}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-function Bullet({ text, color }: { text: string; color: string }) {
-  return (
-    <View style={{ flexDirection: "row", marginTop: 8 }}>
-      <Text style={{ marginRight: 8, color }}>{"\u2022"}</Text>
-      <Text style={{ flex: 1, color, fontSize: 13 }}>{text}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 16 },
@@ -929,29 +972,6 @@ const styles = StyleSheet.create({
   segment: { marginTop: 16, borderRadius: 12 },
   segmentContent: { flexDirection: "row", gap: 6 },
   chartCard: { borderRadius: 12, marginTop: 16, overflow: "hidden" },
-  consistencyCard: {
-    marginTop: 16,
-    borderRadius: 12,
-    backgroundColor: "#9333ea",
-  },
-  consistencyTitle: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  consistencyValue: { color: "#fff", fontSize: 44, fontWeight: "900", marginTop: 8 },
-  consistencyLabel: { color: "#e9d5ff", fontSize: 12, marginTop: 2, fontWeight: "700" },
-  consistencySideText: { color: "#e9d5ff", fontSize: 12, textAlign: "right" },
-  insightCard: { borderRadius: 12, marginTop: 16 },
-  insightRow: { flexDirection: "row", alignItems: "flex-start", marginTop: 10 },
-  insightIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#dbeafe",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-    marginTop: 2,
-  },
-  insightIndexText: { color: "#1d4ed8", fontSize: 12, fontWeight: "800" },
-  nextCard: { borderRadius: 12, marginTop: 16 },
   imuLegend: { flexDirection: "row", gap: 12, marginBottom: 4 },
   imuLegendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   imuLegendDot: { width: 10, height: 10, borderRadius: 5 },
