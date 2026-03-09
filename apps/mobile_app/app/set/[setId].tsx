@@ -164,8 +164,9 @@ function downsampleMinMax(points: Point[], maxPoints: number): Point[] {
     let maxP = points[start];
     for (let i = start + 1; i < end; i++) {
       const p = points[i];
-      if (p.value < minP.value) minP = p;
-      if (p.value > maxP.value) maxP = p;
+      if (!isFinite(p.value)) continue;
+      if (p.value < minP.value || !isFinite(minP.value)) minP = p;
+      if (p.value > maxP.value || !isFinite(maxP.value)) maxP = p;
     }
     if (minP.time <= maxP.time) out.push(minP, maxP);
     else out.push(maxP, minP);
@@ -187,6 +188,7 @@ function rmsEnvelope(points: Point[], windowSize = 25): Point[] {
     buf.push(vv);
     sumSq += vv;
     if (buf.length > windowSize) sumSq -= buf.shift()!;
+    if (sumSq < 0) sumSq = 0;
     const rms = Math.sqrt(sumSq / buf.length);
     out.push({ time: points[i].time, value: rms });
   }
