@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { LineChart, BarChart } from "react-native-chart-kit";
+import { LineChart } from "react-native-chart-kit";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
@@ -344,7 +344,7 @@ export default function SetAnalyticsScreen() {
 }, [setId, isSqlite]);
 
   const baseWidth = screenWidth - 32;
-  const displayMaxPoints = 2000;
+  const displayMaxPoints = 300;
 
   const emgSeries = emgChannelSeries[selectedEmgChannel];
 
@@ -360,18 +360,31 @@ export default function SetAnalyticsScreen() {
     return downsampleMinMax(env, displayMaxPoints);
   }, [imuSeries]);
 
+  const MAX_CHART_WIDTH = 2400;
   const emgChartWidth = useMemo(
-    () => Math.max(baseWidth, displayEmg.length * 6),
+    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, displayEmg.length * 4)),
     [baseWidth, displayEmg.length]
   );
   const imuChartWidth = useMemo(
-    () => Math.max(baseWidth, displayImu.length * 6),
+    () => Math.min(MAX_CHART_WIDTH, Math.max(baseWidth, displayImu.length * 4)),
     [baseWidth, displayImu.length]
   );
 
   const selectedDisplay = metric === "force" ? displayEmg : displayImu;
   const selectedChartWidth = metric === "force" ? emgChartWidth : imuChartWidth;
   const selectedSeries = useMemo(() => selectedDisplay.map((p) => p.value), [selectedDisplay]);
+
+  const chartLabels = useMemo(() => {
+    if (selectedDisplay.length === 0) return [];
+    const t0 = selectedDisplay[0].time;
+    const step = Math.max(1, Math.floor(selectedDisplay.length / 8));
+    return selectedDisplay.map((p, i) => {
+      if (i % step === 0 || i === selectedDisplay.length - 1) {
+        return ((p.time - t0) / 1000).toFixed(1);
+      }
+      return "";
+    });
+  }, [selectedDisplay]);
   const emgChannelLabel = EMG_CHANNELS.find((c) => c.key === selectedEmgChannel)?.label ?? "";
   const selectedTitle = metric === "force"
     ? `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`
@@ -387,10 +400,13 @@ export default function SetAnalyticsScreen() {
     return channelValues.reduce((a, b) => a + b, 0) / channelValues.length;
   }, [channelValues]);
 
-  const maxEmg = useMemo(
-    () => (channelValues.length ? Math.max(...channelValues) : 0),
-    [channelValues]
-  );
+  const maxEmg = useMemo(() => {
+    let mx = 0;
+    for (let i = 0; i < channelValues.length; i++) {
+      if (channelValues[i] > mx) mx = channelValues[i];
+    }
+    return mx;
+  }, [channelValues]);
 
   const consistency = useMemo(() => {
     if (channelValues.length < 2) return 0;
@@ -586,21 +602,7 @@ export default function SetAnalyticsScreen() {
                     >
                       <LineChart
                         data={{
-                          labels: (() => {
-                            if (selectedDisplay.length === 0) return [];
-                            const t0 = selectedDisplay[0].time;
-                            let next = 0;
-                            return selectedDisplay.map((p, i) => {
-                              const rel = p.time - t0;
-                              if (i === 0) return "0.00";
-                              if (rel >= next + 500) {
-                                next += 500;
-                                return (next / 1000).toFixed(2);
-                              }
-                              if (i === selectedDisplay.length - 1) return (rel / 1000).toFixed(2);
-                              return "";
-                            });
-                          })(),
+                          labels: chartLabels,
                           datasets: [{ data: selectedSeries as any }],
                         }}
                         width={selectedChartWidth}
