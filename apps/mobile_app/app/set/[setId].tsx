@@ -538,11 +538,15 @@ export default function SetAnalyticsScreen() {
     const series = imuAxisSeries[yawKey];
     if (series.length === 0) return 0;
     let mx = 0;
+    let rawMax = 0;
     for (const p of series) {
       const abs = Math.abs(p.value);
-      if (abs > mx) mx = abs;
+      if (abs > mx) {
+        mx = abs;
+        rawMax = p.value;
+      }
     }
-    return Math.round(mx * 10) / 10;
+    return Math.round(rawMax * 10) / 10;
   }, [imuAxisSeries, selectedImuSide]);
 
   const FLARE_THRESHOLD = 15;
@@ -822,22 +826,6 @@ export default function SetAnalyticsScreen() {
               >
                 Time (s)
               </Text>
-
-              {/* Max/Min Yaw Display */}
-              <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 16 }}>
-                <View style={{ alignItems: "center" }}>
-                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Baseline Yaw</Text>
-                  <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "700" }}>{baselineYaw.toFixed(1)}°</Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Min Yaw</Text>
-                  <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "700" }}>{minYaw.toFixed(1)}°</Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Max Yaw</Text>
-                  <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "700" }}>{maxYaw.toFixed(1)}°</Text>
-                </View>
-              </View>
             </Card.Content>
           </Card>
         )}
@@ -862,8 +850,8 @@ export default function SetAnalyticsScreen() {
           />
           <StatCard
             title="Max Flare"
-            value={`${maxFlare}\u00B0`}
-            color={maxFlare > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
+            value={`${Math.abs(maxFlare)}°`}
+            color={Math.abs(maxFlare) > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
           />
         </View>
 

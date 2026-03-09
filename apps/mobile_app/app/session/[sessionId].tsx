@@ -311,8 +311,7 @@ export default function SessionSetsScreen() {
                 .filter((st) => setFlare[st.id]?.detected)
                 .map((st) => {
                   const dev = setFlare[st.id].maxDev;
-                  const dir = dev > 0 ? "Outwards" : "Inwards";
-                  return `${st.label?.trim() || `Set ${sets.indexOf(st) + 1}`} (${Math.abs(dev).toFixed(1)}\u00B0 ${dir})`;
+                  return `${st.label?.trim() || `Set ${sets.indexOf(st) + 1}`} (${Math.abs(dev).toFixed(1)}\u00B0)`;
                 })
                 .join("  \u2022  ")}
             </Text>
@@ -406,15 +405,10 @@ export default function SessionSetsScreen() {
 
                   {/* Shoulder flare alert */}
                   {isSqlite && flare?.detected && (
-                    <View style={[styles.flareAlert, { flexDirection: "column", alignItems: "flex-start", paddingVertical: 8 }]}>
-                      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
-                        <Ionicons name="warning" size={14} color="#fff" style={{ marginRight: 6 }} />
-                        <Text style={styles.flareAlertText}>
-                          Shoulder flare ({Math.abs(flare.maxDev).toFixed(1)}° {flare.maxDev > 0 ? "Outwards" : "Inwards"})
-                        </Text>
-                      </View>
-                      <Text style={[styles.flareAlertText, { fontSize: 11, opacity: 0.9, marginLeft: 20 }]}>
-                        Baseline: {flare.baselineYaw.toFixed(1)}° → Max: {flare.absoluteMaxDevYaw.toFixed(1)}°
+                    <View style={styles.flareAlert}>
+                      <Ionicons name="warning" size={14} color="#fff" />
+                      <Text style={styles.flareAlertText}>
+                        Shoulder flare ({Math.abs(flare.maxDev).toFixed(1)}°)
                       </Text>
                     </View>
                   )}
