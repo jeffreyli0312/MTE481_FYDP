@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { Card, Text, Button, Badge } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
+
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
@@ -518,16 +518,6 @@ export default function SessionView({
               key={set.id}
               style={styles.setRowCard}
               mode="outlined"
-              onPress={() =>
-                router.push({
-                  pathname: "/set/[setId]",
-                  params: {
-                    setId: set.id,
-                    source: "sqlite",
-                    ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
-                  },
-                })
-              }
             >
               <Card.Content style={styles.setRowContent}>
                 <View
