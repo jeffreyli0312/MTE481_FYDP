@@ -114,4 +114,6 @@ void loop() {
     Serial.printf("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f\n", 
              latest_roll, latest_pitch, latest_yaw, latest_ax, latest_ay, latest_az, v_raw, v_env);
   }
+  delay(50);
+
 }
