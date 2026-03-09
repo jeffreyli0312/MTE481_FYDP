@@ -544,21 +544,33 @@ export default function SetAnalyticsScreen() {
   const applyImuZoom = useCallback((z: number) => setImuZoom(z), []);
 
   // Gestures built once — use refs instead of state in deps to prevent recreation mid-gesture
-  const emgPinch = useMemo(() =>
-    Gesture.Pinch()
-      .onStart(() => { emgZoomBase.current = emgZoomRef.current; })
-      .onUpdate((e) => {
-        runOnJS(applyEmgZoom)(Math.max(1, Math.min(10, emgZoomBase.current * e.scale)));
-      })
-  , [applyEmgZoom]);
+  const emgPinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          emgZoomBase.current = emgZoomRef.current;
+        })
+        .onUpdate((e) => {
+          runOnJS(applyEmgZoom)(
+            Math.max(1, Math.min(10, emgZoomBase.current * e.scale)),
+          );
+        }),
+    [applyEmgZoom],
+  );
 
-  const imuPinch = useMemo(() =>
-    Gesture.Pinch()
-      .onStart(() => { imuZoomBase.current = imuZoomRef.current; })
-      .onUpdate((e) => {
-        runOnJS(applyImuZoom)(Math.max(1, Math.min(10, imuZoomBase.current * e.scale)));
-      })
-  , [applyImuZoom]);
+  const imuPinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          imuZoomBase.current = imuZoomRef.current;
+        })
+        .onUpdate((e) => {
+          runOnJS(applyImuZoom)(
+            Math.max(1, Math.min(10, imuZoomBase.current * e.scale)),
+          );
+        }),
+    [applyImuZoom],
+  );
 
   const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
   const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
@@ -1104,11 +1116,11 @@ export default function SetAnalyticsScreen() {
                     : "#22c55e"
             }
           />
-          <StatCard
+          {/* <StatCard
             title="Max Flare"
             value={`${Math.abs(maxFlare)}°`}
             color={Math.abs(maxFlare) > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
-          />
+          /> */}
         </View>
 
         {/* Per-rep bar chart */}
