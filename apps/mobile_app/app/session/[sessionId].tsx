@@ -7,7 +7,7 @@ import {
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Card, Text, ActivityIndicator } from "react-native-paper";
+import { Card, Text, ActivityIndicator, Button } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
@@ -21,6 +21,7 @@ import {
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth, emaSmooth } from "../utils/format";
+import { exportSessionCsvs } from "../utils/exportCsv";
 
 const FLARE_THRESHOLD = 45; // degrees
 
@@ -90,6 +91,25 @@ export default function SessionSetsScreen() {
   const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
   const [setFlare, setSetFlare] = useState<Record<string, { detected: boolean; maxDev: number; baselineYaw: number; absoluteMaxDevYaw: number }>>({});
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    if (sets.length === 0) return;
+    setExporting(true);
+    try {
+      const setsInfo = sets.map((st, idx) => ({
+        id: st.id,
+        label: st.label?.trim() || `Set_${idx + 1}`,
+      }));
+      await exportSessionCsvs(
+        setsInfo,
+        user?.id,
+        (title as string) ?? "Bench Press",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -292,12 +312,28 @@ export default function SessionSetsScreen() {
         >
           {title ?? "Session"}
         </Text>
-        <Text
-          variant="bodySmall"
-          style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
-        >
-          Tap a set to view charts
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+          <Text
+            variant="bodySmall"
+            style={{ color: colors.onSurfaceVariant }}
+          >
+            Tap a set to view charts
+          </Text>
+          {isSqlite && !loading && sets.length > 0 && (
+            <Button
+              mode="outlined"
+              onPress={handleExport}
+              loading={exporting}
+              disabled={exporting}
+              icon="download"
+              compact
+              style={{ borderRadius: 8 }}
+              labelStyle={{ fontSize: 12 }}
+            >
+              Export CSV
+            </Button>
+          )}
+        </View>
       </View>
 
       {/* Shoulder flare banner */}
