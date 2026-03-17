@@ -57,11 +57,11 @@ type EmgChannelKey =
   | "emg_right_tricep"
   | "emg_right_pec";
 
-const EMG_CHANNELS: { key: EmgChannelKey; label: string }[] = [
-  { key: "emg_left_tricep", label: "L Tricep" },
-  { key: "emg_left_pec", label: "L Pec" },
-  { key: "emg_right_tricep", label: "R Tricep" },
-  { key: "emg_right_pec", label: "R Pec" },
+type EmgGroupKey = "pec" | "tricep";
+
+const EMG_GROUPS: { key: EmgGroupKey; label: string; leftKey: EmgChannelKey; rightKey: EmgChannelKey }[] = [
+  { key: "pec", label: "Pec", leftKey: "emg_left_pec", rightKey: "emg_right_pec" },
+  { key: "tricep", label: "Tricep", leftKey: "emg_left_tricep", rightKey: "emg_right_tricep" },
 ];
 
 type ImuAxisKey =
@@ -224,7 +224,6 @@ export default function SetAnalyticsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [samples, setSamples] = useState<SampleRow[]>([]);
   const [reps, setReps] = useState<RepRow[]>([]);
   const [duration, setDuration] = useState("0m 0s");
   const [emgChannelSeries, setEmgChannelSeries] = useState<
@@ -246,8 +245,8 @@ export default function SetAnalyticsScreen() {
     r_yaw: [],
   });
   const [metric, setMetric] = useState<MetricKey>("force");
-  const [selectedEmgChannel, setSelectedEmgChannel] =
-    useState<EmgChannelKey>("emg_left_pec");
+  const [selectedEmgGroup, setSelectedEmgGroup] =
+    useState<EmgGroupKey>("pec");
   const [selectedImuSide, setSelectedImuSide] = useState<ImuSide>("left");
   const [mvcValue, setMvcValue] = useState(0);
 
@@ -355,7 +354,6 @@ export default function SetAnalyticsScreen() {
           const repRows = listRepsForSet(setId);
 
           if (!cancelled) {
-            setSamples(rows);
             setReps(repRows);
             setEmgChannelSeries(perChannel);
             setImuAxisSeries(perImu);
@@ -410,24 +408,6 @@ export default function SetAnalyticsScreen() {
           ]),
         ).sort((a, b) => a - b);
 
-        const rows: SampleRow[] = times.map((t) => {
-          const emgVal = emgMap.has(t) ? emgMap.get(t)! : null;
-          const imuVal = imuMap.has(t) ? imuMap.get(t)! : null;
-          return {
-            time: t,
-            emg_left_tricep: emgVal,
-            emg_left_pec: emgVal,
-            emg_right_tricep: emgVal,
-            emg_right_pec: emgVal,
-            l_roll: imuVal,
-            l_pitch: imuVal,
-            l_yaw: imuVal,
-            r_roll: imuVal,
-            r_pitch: imuVal,
-            r_yaw: imuVal,
-          };
-        });
-
         const perChannel: Record<EmgChannelKey, Point[]> = {
           emg_left_tricep: emgAll,
           emg_left_pec: emgAll,
@@ -456,7 +436,6 @@ export default function SetAnalyticsScreen() {
         if (!cancelled) {
           setEmgChannelSeries(perChannel);
           setImuAxisSeries(perImu);
-          setSamples(rows);
           setDuration(formatDurationFromMs(durMs));
         }
       } catch (e: any) {
@@ -475,13 +454,43 @@ export default function SetAnalyticsScreen() {
   const baseWidth = screenWidth - 32;
   const displayMaxPoints = 300;
 
-  const emgSeries = emgChannelSeries[selectedEmgChannel];
+  const selectedGroup = EMG_GROUPS.find((g) => g.key === selectedEmgGroup)!;
+  const leftSeries = emgChannelSeries[selectedGroup.leftKey];
+  const rightSeries = emgChannelSeries[selectedGroup.rightKey];
 
-  const displayEmg = useMemo(() => {
-    const smoothed = movingAverageSmooth(emgSeries, 10);
-    const env = rmsEnvelope(smoothed, 25);
-    return trimLeadingBaseline(downsampleMinMax(env, displayMaxPoints));
-  }, [emgSeries]);
+  const emgDatasetsForGroup = useMemo(() => {
+    const process = (pts: Point[]) => {
+      const smoothed = movingAverageSmooth(pts, 10);
+      const env = rmsEnvelope(smoothed, 25);
+      return trimLeadingBaseline(downsampleMinMax(env, displayMaxPoints));
+    };
+    const leftProcessed = process(leftSeries);
+    const rightProcessed = process(rightSeries);
+    const minLen = Math.min(leftProcessed.length, rightProcessed.length);
+    if (minLen < 2) return null;
+    const labels = leftProcessed.slice(0, minLen).map((p, i) => {
+      if (i === 0 || i === minLen - 1 || i % Math.max(1, Math.floor(minLen / 8)) === 0) {
+        return ((p.time - (leftProcessed[0]?.time ?? 0)) / 1000).toFixed(1);
+      }
+      return "";
+    });
+    return {
+      labels,
+      datasets: [
+        {
+          data: leftProcessed.slice(0, minLen).map((p) => p.value),
+          color: () => "rgba(59,130,246,1)",
+          strokeWidth: 2,
+        },
+        {
+          data: rightProcessed.slice(0, minLen).map((p) => p.value),
+          color: () => "rgba(249,115,22,1)",
+          strokeWidth: 2,
+        },
+      ],
+    };
+  }, [leftSeries, rightSeries]);
+
 
   const processImuAxis = useCallback(
     (key: ImuAxisKey) => {
@@ -555,23 +564,6 @@ export default function SetAnalyticsScreen() {
   const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
   const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
 
-  const emgSelectedSeries = useMemo(
-    () => displayEmg.map((p) => p.value),
-    [displayEmg],
-  );
-
-  const emgChartLabels = useMemo(() => {
-    if (displayEmg.length === 0) return [];
-    const t0 = displayEmg[0].time;
-    const step = Math.max(1, Math.floor(displayEmg.length / 8));
-    return displayEmg.map((p, i) => {
-      if (i % step === 0 || i === displayEmg.length - 1) {
-        return ((p.time - t0) / 1000).toFixed(1);
-      }
-      return "";
-    });
-  }, [displayEmg]);
-
   const imuChartLabels = useMemo(() => {
     if (imuReferenceAxis.length === 0) return [];
     const t0 = imuReferenceAxis[0].time;
@@ -598,15 +590,18 @@ export default function SetAnalyticsScreen() {
     };
   }, [displayImuAxes, imuChartLabels]);
 
-  const emgChannelLabel =
-    EMG_CHANNELS.find((c) => c.key === selectedEmgChannel)?.label ?? "";
-  const emgTitle = `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`;
+  const emgTitle = `${selectedGroup.label} EMG (L / R) ${mvcValue > 0 ? "% MVC" : ""} Over Time`;
   const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} IMU – Roll / Pitch / Yaw`;
 
-  const channelValues = useMemo(
-    () => emgSeries.map((p) => p.value).filter((v) => Number.isFinite(v)),
-    [emgSeries],
-  );
+  const channelValues = useMemo(() => {
+    const all = [
+      ...emgChannelSeries.emg_left_pec,
+      ...emgChannelSeries.emg_right_pec,
+      ...emgChannelSeries.emg_left_tricep,
+      ...emgChannelSeries.emg_right_tricep,
+    ];
+    return all.map((p) => p.value).filter((v) => Number.isFinite(v));
+  }, [emgChannelSeries]);
 
   const avgEmg = useMemo(() => {
     if (!channelValues.length) return 0;
@@ -774,24 +769,6 @@ export default function SetAnalyticsScreen() {
               {(label as string) ?? "Bench Press"} {"\u2022"}{" "}
               {formatDateOnly(created_at)}
             </Text>
-
-            <Text
-              variant="labelSmall"
-              style={{ marginTop: 6, color: colors.onSurfaceVariant }}
-            >
-              Loaded{" "}
-              <Text style={{ color: colors.onSurface, fontWeight: "800" }}>
-                {samples.length}
-              </Text>{" "}
-              merged rows {"\u2022"} EMG{" "}
-              <Text style={{ color: colors.onSurface, fontWeight: "800" }}>
-                {emgSeries.length}
-              </Text>{" "}
-              {"\u2022"} IMU{" "}
-              <Text style={{ color: colors.onSurface, fontWeight: "800" }}>
-                {imuReferenceAxis.length}
-              </Text>
-            </Text>
           </View>
 
           <View style={[styles.badge, { backgroundColor: colors.success }]}>
@@ -829,24 +806,23 @@ export default function SetAnalyticsScreen() {
           </Card.Content>
         </Card>
 
-        {/* EMG channel selector */}
+        {/* EMG muscle group selector (Pec / Tricep) */}
         {metric === "force" && (
           <Card style={styles.segment} mode="outlined">
             <Card.Content style={styles.segmentContent}>
-              {EMG_CHANNELS.map((ch) => {
-                const active = selectedEmgChannel === ch.key;
+              {EMG_GROUPS.map((g) => {
+                const active = selectedEmgGroup === g.key;
                 return (
                   <Button
-                    key={ch.key}
+                    key={g.key}
                     mode={active ? "contained" : "outlined"}
-                    onPress={() => setSelectedEmgChannel(ch.key)}
+                    onPress={() => setSelectedEmgGroup(g.key)}
                     compact
                     style={{ flex: 1 }}
                     buttonColor={active ? colors.primary : undefined}
                     textColor={active ? "#fff" : colors.onSurface}
-                    labelStyle={{ fontSize: 11 }}
                   >
-                    {ch.label}
+                    {g.label}
                   </Button>
                 );
               })}
@@ -883,10 +859,20 @@ export default function SetAnalyticsScreen() {
           </Card>
         )}
 
-        {/* EMG Chart */}
-        {metric === "force" && emgSelectedSeries.length >= 2 && (
+        {/* EMG Chart – Pec or Tricep with L/R lines */}
+        {metric === "force" && emgDatasetsForGroup && emgDatasetsForGroup.datasets[0].data.length >= 2 && (
           <Card style={styles.chartCard} mode="outlined">
             <Card.Content>
+              <View style={styles.imuLegend}>
+                <View style={styles.imuLegendItem}>
+                  <View style={[styles.imuLegendDot, { backgroundColor: "rgba(59,130,246,1)" }]} />
+                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Left</Text>
+                </View>
+                <View style={styles.imuLegendItem}>
+                  <View style={[styles.imuLegendDot, { backgroundColor: "rgba(249,115,22,1)" }]} />
+                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Right</Text>
+                </View>
+              </View>
               <Text variant="titleSmall" style={{ marginBottom: 4 }}>
                 {emgTitle}
               </Text>
@@ -915,14 +901,16 @@ export default function SetAnalyticsScreen() {
                 >
                   <LineChart
                     data={{
-                      labels: emgChartLabels,
+                      labels: emgDatasetsForGroup.labels,
                       datasets: [
-                        { data: emgSelectedSeries as any },
-                        {
-                          data: [100],
-                          withDots: false,
-                          color: () => "transparent",
-                        },
+                        ...emgDatasetsForGroup.datasets,
+                        ...(mvcValue > 0
+                          ? [{
+                              data: [100],
+                              withDots: false,
+                              color: () => "transparent",
+                            }]
+                          : []),
                       ],
                     }}
                     width={emgChartWidth}

@@ -99,7 +99,11 @@ export default function HistoryScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/session/[sessionId]",
-                    params: { sessionId: s.id, source: "sqlite" },
+                    params: {
+                      sessionId: s.id,
+                      source: "sqlite",
+                      title: s.label ?? undefined,
+                    },
                   })
                 }
               />
