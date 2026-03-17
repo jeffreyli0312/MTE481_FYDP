@@ -435,20 +435,6 @@ export default function SetAnalyticsScreen() {
           emg_right_pec: emgAll,
         };
 
-        const buildImuAxis = (key: ImuAxisKey): Point[] => {
-          if (rows.length === 0) return [];
-          const rawPts = rows
-            .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
-            .sort((a, b) => a.time - b.time);
-
-          if (rawPts.length === 0) return [];
-
-          return rawPts.map((r) => {
-            let val = Number(r[key]);
-            return { time: r.time, value: val };
-          });
-        };
-
         const perImu: Record<ImuAxisKey, Point[]> = {
           l_roll: imuAll,
           l_pitch: imuAll,
@@ -484,7 +470,7 @@ export default function SetAnalyticsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [setId, isSqlite]);
+  }, [setId, isSqlite, label, mvcParam, user?.id]);
 
   const baseWidth = screenWidth - 32;
   const displayMaxPoints = 300;
@@ -617,29 +603,6 @@ export default function SetAnalyticsScreen() {
   const emgTitle = `${emgChannelLabel} ${mvcValue > 0 ? "(% MVC)" : "EMG"} Over Time`;
   const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} IMU – Roll / Pitch / Yaw`;
 
-  const yawValues = useMemo(() => {
-    if (!displayImuAxes[2] || displayImuAxes[2].length === 0) return [];
-    return displayImuAxes[2].map((p) => p.value).filter(Number.isFinite);
-  }, [displayImuAxes]);
-
-  const baselineYaw = useMemo(() => {
-    if (yawValues.length === 0) return 0;
-    // displayImuAxes is already downsampled/smoothed, so 300 samples might be the entire array.
-    // Let's just use the first few smoothed samples for a baseline (e.g. 10% of display length or first few)
-    // Actually, in [sessionId].tsx we used 300 raw samples directly.
-    // Using the first smoothed value is very stable now.
-    return yawValues[0];
-  }, [yawValues]);
-
-  const maxYaw = useMemo(
-    () => (yawValues.length ? Math.max(...yawValues) : 0),
-    [yawValues],
-  );
-  const minYaw = useMemo(
-    () => (yawValues.length ? Math.min(...yawValues) : 0),
-    [yawValues],
-  );
-
   const channelValues = useMemo(
     () => emgSeries.map((p) => p.value).filter((v) => Number.isFinite(v)),
     [emgSeries],
@@ -758,7 +721,7 @@ export default function SetAnalyticsScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
         <Text variant="titleSmall" style={{ color: colors.onSurface }}>
-          Couldn't load
+          Could not load
         </Text>
         <Text
           variant="bodySmall"
