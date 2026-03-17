@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
-import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
+import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAppTheme } from "../theme";
@@ -22,13 +22,6 @@ interface ExerciseOverviewProps {
   onBack: () => void;
   onStartNewSession: () => void;
 }
-
-type SessionCard = {
-  id: string;
-  dateText: string;
-  setCount: number;
-  durationText: string;
-};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

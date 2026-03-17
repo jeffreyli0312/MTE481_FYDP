@@ -25,7 +25,7 @@ export type LocalSessionSummary = {
  * Loads all local SQLite sessions and computes summary stats for each.
  * The userId param is kept for API compatibility but all sessions are loaded.
  */
-export function useLocalSessions(_userId?: string | undefined) {
+export function useLocalSessions(_userId?: string | undefined, exerciseName?: string) {
   const [sessions, setSessions] = useState<LocalSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function useLocalSessions(_userId?: string | undefined) {
 
     try {
       initBleDb();
-      const rows = listAllSessions();
+      const rows = listAllSessions(exerciseName);
 
       const summaries: LocalSessionSummary[] = rows.map((session: SessionRow) => {
         const sets: SetRow[] = listSets(session.id);
@@ -97,7 +97,7 @@ export function useLocalSessions(_userId?: string | undefined) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, exerciseName]);
 
   return { sessions, loading, error, reload: load };
 }

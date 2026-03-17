@@ -8,19 +8,21 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Text } from "react-native-paper";
+import { Text, Chip } from "react-native-paper";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { formatDateFromMs, formatDurationFromMs } from "../utils/format";
 import { useLocalSessions } from "../hooks/useLocalSessions";
 import SessionCard from "../components/SessionCard";
 import ListState from "../components/ListState";
+import { AVAILABLE_EXERCISES } from "../constants/exercises";
 
 export default function HistoryScreen() {
   const { colors, dark } = useAppTheme();
   const { user } = useAuth();
 
-  const local = useLocalSessions(user?.id);
+  const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
+  const local = useLocalSessions(user?.id, selectedExercise ?? undefined);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(() => {
@@ -45,6 +47,34 @@ export default function HistoryScreen() {
           <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
             Pull down to refresh
           </Text>
+        </View>
+
+        <View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScrollContent}
+          >
+            <Chip
+              selected={selectedExercise === null}
+              onPress={() => setSelectedExercise(null)}
+              style={styles.chip}
+              showSelectedOverlay
+            >
+              All
+            </Chip>
+            {AVAILABLE_EXERCISES.map((ex) => (
+              <Chip
+                key={ex.id}
+                selected={selectedExercise === ex.name}
+                onPress={() => setSelectedExercise(ex.name)}
+                style={styles.chip}
+                showSelectedOverlay
+              >
+                {ex.name}
+              </Chip>
+            ))}
+          </ScrollView>
         </View>
 
         <ScrollView
@@ -86,6 +116,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  filterScrollContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  chip: {
+    marginRight: 4,
   },
   scrollContent: {
     paddingHorizontal: 20,
