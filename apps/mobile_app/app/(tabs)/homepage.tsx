@@ -12,14 +12,7 @@ import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
 import type { Exercise, SessionRecord } from "../types/workout";
-
-
-const AVAILABLE_EXERCISES: Exercise[] = [
-  { id: "bench-press", name: "Bench Press", icon: "\uD83D\uDCAA" },
-  { id: "dumbbell-bench-press", name: "Dumbbell bench press", icon: "\uD83C\uDFCB\uFE0F" },
-  { id: "tricep-extension", name: "Tricep extension", icon: "\uD83D\uDCAA" },
-  { id: "shoulder-press", name: "Shoulder Press", icon: "\uD83C\uDFCB\uFE0F" },
-];
+import { AVAILABLE_EXERCISES } from "../constants/exercises";
 
 export default function HomePageScreen() {
   const { user, signOut } = useAuth();

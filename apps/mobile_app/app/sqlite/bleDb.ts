@@ -464,8 +464,14 @@ export function listSessions(userId: string, label?: string): SessionRow[] {
   );
 }
 
-export function listAllSessions(): SessionRow[] {
+export function listAllSessions(label?: string): SessionRow[] {
   const db = getDb();
+  if (label) {
+    return db.getAllSync<SessionRow>(
+      `SELECT * FROM sessions WHERE label = ? ORDER BY started_at DESC`,
+      [label]
+    );
+  }
   return db.getAllSync<SessionRow>(
     `SELECT * FROM sessions ORDER BY started_at DESC`
   );
