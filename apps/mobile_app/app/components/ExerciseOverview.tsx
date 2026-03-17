@@ -10,10 +10,6 @@ import {
   listSessions,
   listSets,
   listSamplesForSet,
-  insertSession,
-  insertSet,
-  insertSample,
-  clearBleDb,
   getLatestCalibration,
   type CalibrationRow,
 } from "../sqlite/bleDb";
@@ -51,65 +47,6 @@ function formatDuration(ms: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-/** Gaussian spike shape */
-function gaussian(x: number, center: number, width: number): number {
-  return Math.exp(-((x - center) ** 2) / (2 * width ** 2));
-}
-
-/** Seed one fake set (10 rep spikes) into local SQLite */
-function seedFakeSetIntoDb(userId: string, exerciseName: string) {
-  initBleDb();
-
-  const sessions = listSessions(userId, exerciseName);
-  let sessionId: string;
-
-  if (sessions.length === 0) {
-    sessionId = `sess_${userId}_${Date.now()}`;
-    insertSession({ sessionId, userId, deviceId: "FAKE_DEVICE", label: exerciseName, startedAt: Date.now() });
-  } else {
-    sessionId = sessions[0].id;
-  }
-
-  const now = Date.now();
-  const setId = `set_${sessionId}_${now}`;
-  const setNumber = listSets(sessionId).length + 1;
-
-  insertSet({ setId, sessionId, userId, label: `Set ${setNumber}`, startedAt: now });
-
-  const REP_MS = 2000;
-  const INTERVAL_MS = 50;
-  const NUM_REPS = 10;
-  const TOTAL = (REP_MS * NUM_REPS) / INTERVAL_MS;
-  const BASELINE = 30;
-  const PEAK = 550 + Math.random() * 250;
-
-  for (let i = 0; i < TOTAL; i++) {
-    const t_ms = i * INTERVAL_MS;
-    const tInRep = (t_ms % REP_MS) / REP_MS;
-    const spike = gaussian(tInRep, 0.4, 0.12);
-    const noise = (Math.random() - 0.5) * 25;
-    const emg = Math.max(0, Math.round(BASELINE + (PEAK - BASELINE) * spike + noise));
-
-    insertSample({
-      userId,
-      sessionId,
-      setId,
-      parsed: {
-        t_ms,
-        emg_left_tricep: emg,
-        emg_left_pec: Math.round(emg * 0.7),
-        emg_right_tricep: Math.round(emg * 0.85),
-        emg_right_pec: Math.round(emg * 0.65),
-        l_accx: 0, l_accy: 0, l_accz: 980,
-        l_roll: 0, l_pitch: 0, l_yaw: 0,
-        r_accx: 0, r_accy: 0, r_accz: 980,
-        r_roll: 0, r_pitch: 0, r_yaw: 0,
-      },
-      receivedAt: now + t_ms,
-    });
-  }
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ExerciseOverview({
@@ -122,7 +59,6 @@ export default function ExerciseOverview({
 
   const [sessionCards, setSessionCards] = useState<SessionCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
   const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
 
@@ -158,7 +94,9 @@ export default function ExerciseOverview({
           dateText: formatDateFromMs(sess.started_at ?? null),
           setCount: sets.length,
           durationText:
-            minAt != null && maxAt != null ? formatDuration(maxAt - minAt) : "—",
+            minAt != null && maxAt != null
+              ? formatDuration(maxAt - minAt)
+              : "—",
         };
       });
 
@@ -170,20 +108,10 @@ export default function ExerciseOverview({
     }
   }
 
-  useEffect(() => { refresh(); loadCalibration(); }, [user?.id]);
-
-  function handleSeedFakeSet() {
-    if (!user?.id) return;
-    setSeeding(true);
-    try {
-      seedFakeSetIntoDb(user.id, exerciseName);
-      refresh();
-    } catch (e) {
-      console.error("Seed error", e);
-    } finally {
-      setSeeding(false);
-    }
-  }
+  useEffect(() => {
+    refresh();
+    loadCalibration();
+  }, [user?.id]);
 
   if (calibrationMode) {
     return (
@@ -216,18 +144,29 @@ export default function ExerciseOverview({
       </Pressable>
 
       {/* Title */}
-      <Text variant="headlineMedium" style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6 }}>
+      <Text
+        variant="headlineMedium"
+        style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6 }}
+      >
         {exerciseName}
       </Text>
-      <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
-        {loading ? "Loading..." : `${sessionCards.length} session${sessionCards.length === 1 ? "" : "s"}`}
+      <Text
+        variant="bodyMedium"
+        style={{ color: colors.onSurfaceVariant, marginTop: 4 }}
+      >
+        {loading
+          ? "Loading..."
+          : `${sessionCards.length} session${sessionCards.length === 1 ? "" : "s"}`}
       </Text>
 
       {/* MVC Calibration Card */}
       <Card style={styles.mvcCard} mode="outlined">
         <Card.Content>
           <View style={styles.topRow}>
-            <Text variant="titleSmall" style={{ color: colors.onSurface, fontWeight: "900" }}>
+            <Text
+              variant="titleSmall"
+              style={{ color: colors.onSurface, fontWeight: "900" }}
+            >
               MVC Calibration
             </Text>
             <Feather name="zap" size={16} color={colors.primary} />
@@ -235,13 +174,28 @@ export default function ExerciseOverview({
           {calibration ? (
             <>
               <View style={{ marginTop: 8 }}>
-                <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant }}>
-                  Channel: {CHANNEL_LABELS[calibration.emg_channel] ?? calibration.emg_channel}
+                <Text
+                  variant="bodySmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
+                  Channel:{" "}
+                  {CHANNEL_LABELS[calibration.emg_channel] ??
+                    calibration.emg_channel}
                 </Text>
-                <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900", marginTop: 2 }}>
+                <Text
+                  variant="titleMedium"
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "900",
+                    marginTop: 2,
+                  }}
+                >
                   MVC: {calibration.mvc_value.toFixed(4)}
                 </Text>
-                <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant, marginTop: 2 }}>
+                <Text
+                  variant="labelSmall"
+                  style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+                >
                   Calibrated: {formatDateFromMs(calibration.calibrated_at)}
                 </Text>
               </View>
@@ -257,8 +211,12 @@ export default function ExerciseOverview({
             </>
           ) : (
             <>
-              <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 6 }}>
-                Calibrate your MVC to normalize EMG data and enable rep counting.
+              <Text
+                variant="bodySmall"
+                style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+              >
+                Calibrate your MVC to normalize EMG data and enable rep
+                counting.
               </Text>
               <Button
                 mode="contained"
@@ -287,30 +245,6 @@ export default function ExerciseOverview({
         Start New Session
       </Button>
 
-      {/* DEV seed */}
-      <Button
-        mode="outlined"
-        onPress={handleSeedFakeSet}
-        loading={seeding}
-        disabled={seeding}
-        icon="database-plus"
-        style={styles.seedBtn}
-        textColor={colors.onSurfaceVariant}
-      >
-        [DEV] Add Fake Set
-      </Button>
-
-      {/* DEV clear */}
-      <Button
-        mode="outlined"
-        onPress={() => { clearBleDb(); refresh(); }}
-        icon="database-remove"
-        style={[styles.seedBtn, { borderColor: "rgba(239,68,68,0.5)" }]}
-        textColor="rgb(239,68,68)"
-      >
-        [DEV] Clear DB
-      </Button>
-
       {/* Session cards */}
       {loading ? (
         <View style={{ alignItems: "center", marginTop: 24 }}>
@@ -319,7 +253,10 @@ export default function ExerciseOverview({
       ) : sessionCards.length === 0 ? (
         <Card style={styles.emptyCard} mode="outlined">
           <Card.Content style={{ alignItems: "center", paddingVertical: 24 }}>
-            <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant }}>
+            <Text
+              variant="bodyMedium"
+              style={{ color: colors.onSurfaceVariant }}
+            >
               No sessions yet.{"\n"}Start a session or add fake data above.
             </Text>
           </Card.Content>
@@ -333,7 +270,11 @@ export default function ExerciseOverview({
             onPress={() =>
               router.push({
                 pathname: "/session/[sessionId]",
-                params: { sessionId: s.id, source: "sqlite", title: `Session ${idx + 1}` },
+                params: {
+                  sessionId: s.id,
+                  source: "sqlite",
+                  title: `Session ${idx + 1}`,
+                },
               })
             }
           >
@@ -341,23 +282,36 @@ export default function ExerciseOverview({
               <View style={styles.topRow}>
                 <View style={styles.inlineRow}>
                   <Text style={{ color: colors.onSurfaceVariant }}>📅</Text>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
                     {s.dateText}
                   </Text>
                 </View>
                 <View style={styles.inlineRow}>
                   <Text style={{ color: colors.onSurfaceVariant }}>🕒</Text>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                  <Text
+                    variant="labelMedium"
+                    style={{ color: colors.onSurfaceVariant }}
+                  >
                     {s.durationText}
                   </Text>
                 </View>
               </View>
               <View style={{ marginTop: 10 }}>
-                <Text variant="headlineSmall" style={{ color: colors.onSurface, fontWeight: "800" }}>
+                <Text
+                  variant="headlineSmall"
+                  style={{ color: colors.onSurface, fontWeight: "800" }}
+                >
                   Session {idx + 1}
                 </Text>
-                <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant }}>
-                  {s.setCount} {s.setCount === 1 ? "set" : "sets"} · tap to view chart
+                <Text
+                  variant="bodySmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
+                  {s.setCount} {s.setCount === 1 ? "set" : "sets"} · tap to view
+                  chart
                 </Text>
               </View>
             </Card.Content>
@@ -371,12 +325,21 @@ export default function ExerciseOverview({
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  backRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
   mvcCard: { borderRadius: 16, marginTop: 16 },
   primaryBtn: { marginTop: 16, borderRadius: 10 },
   seedBtn: { marginTop: 10, borderRadius: 10, borderStyle: "dashed" },
   emptyCard: { marginTop: 20, borderRadius: 14 },
   sessionCard: { borderRadius: 16, marginTop: 14 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   inlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
 });

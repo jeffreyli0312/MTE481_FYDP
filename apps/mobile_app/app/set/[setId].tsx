@@ -14,15 +14,9 @@ import {
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Card,
-  Text,
-  Button,
-  ActivityIndicator,
-  DataTable,
-} from "react-native-paper";
+import { Card, Text, Button, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { LineChart, BarChart } from "react-native-chart-kit";
+import { LineChart } from "react-native-chart-kit";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -544,21 +538,33 @@ export default function SetAnalyticsScreen() {
   const applyImuZoom = useCallback((z: number) => setImuZoom(z), []);
 
   // Gestures built once — use refs instead of state in deps to prevent recreation mid-gesture
-  const emgPinch = useMemo(() =>
-    Gesture.Pinch()
-      .onStart(() => { emgZoomBase.current = emgZoomRef.current; })
-      .onUpdate((e) => {
-        runOnJS(applyEmgZoom)(Math.max(1, Math.min(10, emgZoomBase.current * e.scale)));
-      })
-  , [applyEmgZoom]);
+  const emgPinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          emgZoomBase.current = emgZoomRef.current;
+        })
+        .onUpdate((e) => {
+          runOnJS(applyEmgZoom)(
+            Math.max(1, Math.min(10, emgZoomBase.current * e.scale)),
+          );
+        }),
+    [applyEmgZoom],
+  );
 
-  const imuPinch = useMemo(() =>
-    Gesture.Pinch()
-      .onStart(() => { imuZoomBase.current = imuZoomRef.current; })
-      .onUpdate((e) => {
-        runOnJS(applyImuZoom)(Math.max(1, Math.min(10, imuZoomBase.current * e.scale)));
-      })
-  , [applyImuZoom]);
+  const imuPinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          imuZoomBase.current = imuZoomRef.current;
+        })
+        .onUpdate((e) => {
+          runOnJS(applyImuZoom)(
+            Math.max(1, Math.min(10, imuZoomBase.current * e.scale)),
+          );
+        }),
+    [applyImuZoom],
+  );
 
   const emgChartWidth = Math.max(baseWidth, baseWidth * emgZoom);
   const imuChartWidth = Math.max(baseWidth, baseWidth * imuZoom);
@@ -1110,82 +1116,6 @@ export default function SetAnalyticsScreen() {
             color={Math.abs(maxFlare) > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
           />
         </View>
-
-        {/* Per-rep bar chart */}
-        {/* {reps.length >= 2 && (
-          <Card style={styles.chartCard} mode="outlined">
-            <Card.Content>
-              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
-                Peak EMG Per Rep
-              </Text>
-              <BarChart
-                data={{
-                  labels: reps.map((r) => `${r.rep_number}`),
-                  datasets: [{
-                    data: reps.map((r) => r.peak_emg ?? 0),
-                  }],
-                }}
-                width={baseWidth - 32}
-                height={180}
-                fromZero
-                showValuesOnTopOfBars
-                withInnerLines={false}
-                yAxisSuffix={mvcValue > 0 ? "%" : ""}
-                yAxisLabel=""
-                chartConfig={{
-                  ...chartConfig,
-                  barPercentage: 0.6,
-                  decimalPlaces: 0,
-                }}
-                style={{ borderRadius: 12 }}
-              />
-              <Text
-                variant="labelSmall"
-                style={{ marginTop: 4, color: colors.onSurfaceVariant, textAlign: "center" }}
-              >
-                Rep #
-              </Text>
-            </Card.Content>
-          </Card>
-        )} */}
-
-        {/* Per-rep breakdown table */}
-        {/* {reps.length > 0 && (
-          <Card style={{ borderRadius: 12, marginTop: 16 }} mode="outlined">
-            <Card.Content>
-              <Text variant="titleSmall" style={{ marginBottom: 8 }}>
-                Rep Breakdown
-              </Text>
-              <DataTable>
-                <DataTable.Header>
-                  <DataTable.Title style={{ flex: 0.5 }}>#</DataTable.Title>
-                  <DataTable.Title numeric>Duration</DataTable.Title>
-                  <DataTable.Title numeric>Peak</DataTable.Title>
-                  <DataTable.Title numeric>Mean</DataTable.Title>
-                </DataTable.Header>
-                {reps.map((r) => {
-                  const dur = r.end_ms != null ? r.end_ms - r.start_ms : null;
-                  return (
-                    <DataTable.Row key={r.id}>
-                      <DataTable.Cell style={{ flex: 0.5 }}>{r.rep_number}</DataTable.Cell>
-                      <DataTable.Cell numeric>
-                        {dur != null ? `${(dur / 1000).toFixed(1)}s` : "--"}
-                      </DataTable.Cell>
-                      <DataTable.Cell numeric>
-                        {r.peak_emg != null ? r.peak_emg.toFixed(1) : "--"}
-                        {r.peak_emg != null && mvcValue > 0 ? "%" : ""}
-                      </DataTable.Cell>
-                      <DataTable.Cell numeric>
-                        {r.mean_emg != null ? r.mean_emg.toFixed(1) : "--"}
-                        {r.mean_emg != null && mvcValue > 0 ? "%" : ""}
-                      </DataTable.Cell>
-                    </DataTable.Row>
-                  );
-                })}
-              </DataTable>
-            </Card.Content>
-          </Card>
-        )} */}
       </ScrollView>
     </SafeAreaView>
   );
