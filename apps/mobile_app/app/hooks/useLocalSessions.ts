@@ -11,6 +11,7 @@ import {
 
 export type LocalSessionSummary = {
   id: string;
+  label: string | null;
   startedAtMs: number | null;
   endedAtMs: number | null;
   durationMs: number;
@@ -73,6 +74,7 @@ export function useLocalSessions(_userId?: string | undefined) {
 
         return {
           id: session.id,
+          label: session.label ?? null,
           startedAtMs: session.started_at ?? null,
           endedAtMs: session.ended_at ?? null,
           durationMs,

@@ -57,15 +57,15 @@ function gaussian(x: number, center: number, width: number): number {
 }
 
 /** Seed one fake set (10 rep spikes) into local SQLite */
-function seedFakeSetIntoDb(userId: string) {
+function seedFakeSetIntoDb(userId: string, exerciseName: string) {
   initBleDb();
 
-  const sessions = listSessions(userId);
+  const sessions = listSessions(userId, exerciseName);
   let sessionId: string;
 
   if (sessions.length === 0) {
     sessionId = `sess_${userId}_${Date.now()}`;
-    insertSession({ sessionId, userId, deviceId: "FAKE_DEVICE", startedAt: Date.now() });
+    insertSession({ sessionId, userId, deviceId: "FAKE_DEVICE", label: exerciseName, startedAt: Date.now() });
   } else {
     sessionId = sessions[0].id;
   }
@@ -137,7 +137,7 @@ export default function ExerciseOverview({
     setLoading(true);
     try {
       initBleDb();
-      const sessions = listSessions(user.id).slice().reverse(); // oldest first
+      const sessions = listSessions(user.id, exerciseName).slice().reverse(); // oldest first
 
       const cards: SessionCard[] = sessions.map((sess) => {
         const sets = listSets(sess.id);
@@ -176,7 +176,7 @@ export default function ExerciseOverview({
     if (!user?.id) return;
     setSeeding(true);
     try {
-      seedFakeSetIntoDb(user.id);
+      seedFakeSetIntoDb(user.id, exerciseName);
       refresh();
     } catch (e) {
       console.error("Seed error", e);

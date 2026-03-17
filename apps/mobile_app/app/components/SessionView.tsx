@@ -129,6 +129,7 @@ export default function SessionView({
         sessionId: sessionIdRef.current,
         userId,
         deviceId: ble.connectedDevice?.id ?? undefined,
+        label: exerciseName,
       });
       sessionInsertedRef.current = true;
     }

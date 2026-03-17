@@ -230,12 +230,13 @@ export function insertSession(args: {
   sessionId: string;
   userId: string;
   deviceId?: string;
+  label?: string;
   startedAt?: number;
 }) {
   const db = getDb();
   db.runSync(
-    `INSERT INTO sessions (id, user_id, device_id, started_at) VALUES (?, ?, ?, ?)`,
-    [args.sessionId, args.userId, args.deviceId ?? null, args.startedAt ?? Date.now()]
+    `INSERT INTO sessions (id, user_id, device_id, label, started_at) VALUES (?, ?, ?, ?, ?)`,
+    [args.sessionId, args.userId, args.deviceId ?? null, args.label ?? null, args.startedAt ?? Date.now()]
   );
 }
 
@@ -449,8 +450,14 @@ export function parsePacket(bytes: Uint8Array): ParsedSample | null {
 
 /* ------------------------ READ HELPERS ------------------------ */
 
-export function listSessions(userId: string): SessionRow[] {
+export function listSessions(userId: string, label?: string): SessionRow[] {
   const db = getDb();
+  if (label) {
+    return db.getAllSync<SessionRow>(
+      `SELECT * FROM sessions WHERE user_id = ? AND label = ? ORDER BY started_at DESC`,
+      [userId, label]
+    );
+  }
   return db.getAllSync<SessionRow>(
     `SELECT * FROM sessions WHERE user_id = ? ORDER BY started_at DESC`,
     [userId]
@@ -585,7 +592,7 @@ export function seedTestData(userId: string) {
   const sessionId = `sess_${Date.now()}`;
   const setId = `set_${Date.now()}`;
 
-  insertSession({ sessionId, userId, deviceId: "TEST_DEVICE" });
+  insertSession({ sessionId, userId, deviceId: "TEST_DEVICE", label: "Test Exercise" });
   insertSet({ setId, sessionId, userId, label: "Test Set" });
 
   for (let i = 0; i < 20; i++) {

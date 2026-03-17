@@ -16,6 +16,9 @@ import type { Exercise, SessionRecord } from "../types/workout";
 
 const AVAILABLE_EXERCISES: Exercise[] = [
   { id: "bench-press", name: "Bench Press", icon: "\uD83D\uDCAA" },
+  { id: "dumbbell-bench-press", name: "Dumbbell bench press", icon: "\uD83C\uDFCB\uFE0F" },
+  { id: "tricep-extension", name: "Tricep extension", icon: "\uD83D\uDCAA" },
+  { id: "shoulder-press", name: "Shoulder Press", icon: "\uD83C\uDFCB\uFE0F" },
 ];
 
 export default function HomePageScreen() {
@@ -69,9 +72,6 @@ export default function HomePageScreen() {
           <View>
             <Text variant="titleMedium" style={{ color: colors.onSurface }}>
               EVA: Gym Form Correction System
-            </Text>
-            <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
-              Welcome, {username}
             </Text>
           </View>
 
