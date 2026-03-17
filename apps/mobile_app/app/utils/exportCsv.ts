@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Alert } from "react-native";
 import {
@@ -52,11 +52,12 @@ export async function exportRawCsv(
   const csv = lines.join("\n");
 
   const fileName = `${sanitizeLabel(setLabel)}_raw.csv`;
-  const fileUri = FileSystem.documentDirectory + fileName;
-  await FileSystem.writeAsStringAsync(fileUri, csv, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-  return fileUri;
+  const file = new File(Paths.document, fileName);
+  if (!file.exists) {
+    file.create();
+  }
+  file.write(csv, { encoding: 'utf8' });
+  return file.uri;
 }
 
 /**
@@ -125,11 +126,12 @@ export async function exportProcessedCsv(
 
   const csv = lines.join("\n");
   const fileName = `${sanitizeLabel(setLabel)}_processed.csv`;
-  const fileUri = FileSystem.documentDirectory + fileName;
-  await FileSystem.writeAsStringAsync(fileUri, csv, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-  return fileUri;
+  const file = new File(Paths.document, fileName);
+  if (!file.exists) {
+    file.create();
+  }
+  file.write(csv, { encoding: 'utf8' });
+  return file.uri;
 }
 
 /**
