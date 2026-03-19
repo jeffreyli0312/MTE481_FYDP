@@ -104,7 +104,6 @@ export default function HomePageScreen() {
           >
             <Card.Content style={styles.exerciseContent}>
               <View style={styles.exerciseLeft}>
-                <Text style={{ fontSize: 24, marginRight: 12 }}>{exercise.icon}</Text>
                 <View>
                   <Text variant="titleSmall" style={{ color: colors.onSurface }}>
                     {exercise.name}

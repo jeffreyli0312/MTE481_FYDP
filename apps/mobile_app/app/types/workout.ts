@@ -1,7 +1,7 @@
 export interface Exercise {
   id: string;
   name: string;
-  icon: string;
+  icon?: string;
 }
 
 export type SetRecord = {
