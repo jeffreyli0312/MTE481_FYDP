@@ -470,23 +470,9 @@ export default function SessionView({
               >
                 Press the button below to begin recording
               </Text>
-              {/* Uncomment to require EVA device connection before recording: */}
-              {!ble.connectedDevice && (
-                <Text
-                  variant="bodySmall"
-                  style={{
-                    color: colors.error,
-                    textAlign: "center",
-                    marginBottom: 8,
-                  }}
-                >
-                  Please connect to an EVA device to start recording.
-                </Text>
-              )}
               <Button
                 mode="contained"
                 onPress={startRecording}
-                disabled={!ble.connectedDevice}
                 icon="play"
                 style={styles.actionBtn}
                 buttonColor={colors.success}
