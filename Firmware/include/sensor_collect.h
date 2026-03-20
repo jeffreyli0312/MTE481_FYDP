@@ -8,13 +8,16 @@
 // =================================================================================
 // PIN / I2C CONFIGURATION
 // =================================================================================
-#define EMG_PIN_LEFT_TRICEP   32   // ADC pin – left tricep
-#define EMG_PIN_LEFT_PEC      35   // ADC pin – left pec
-#define EMG_PIN_RIGHT_TRICEP  33   // ADC pin – right tricep
-#define EMG_PIN_RIGHT_PEC     34   // ADC pin – right pec
+#define EMG_PIN_LEFT_TRICEP   4   // ADC pin – left tricep
+#define EMG_PIN_LEFT_PEC      5   // ADC pin – left pec
+
+#define EMG_PIN_RIGHT_TRICEP  10   // ADC pin – right tricep
+#define EMG_PIN_RIGHT_PEC     7   // ADC pin – right pec
 
 // AD0 values: 1 = default SparkFun breakout address (0x69)
 //             0 = ADR jumper closed           (0x68)
+#define I2C_SDA 8
+#define I2C_SCL 9
 #define IMU_LEFT_AD0    1
 #define IMU_RIGHT_AD0   0
 
@@ -129,15 +132,18 @@ void Sensors_Init() {
     }
 
     // I2C bus
-    Wire.begin();
+    Wire.begin(I2C_SDA, I2C_SCL);
     Wire.setClock(400000);
-
+    
     // Left IMU
     bool ok = false;
     while (!ok) {
         imuLeft.begin(Wire, IMU_LEFT_AD0);
         if (imuLeft.status == ICM_20948_Stat_Ok) { ok = true; }
-        else { Serial.println("Left IMU init failed, retrying..."); delay(500); }
+        else { 
+            Serial.println(imuLeft.status);
+            Serial.println("Left IMU init failed, retrying..."); delay(500); 
+        }
     }
     Serial.println("Left IMU OK.");
 

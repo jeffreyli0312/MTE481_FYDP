@@ -76,6 +76,7 @@ class MyRxCallbacks : public BLECharacteristicCallbacks {
 // setup()
 // =================================================================================
 void setup() {
+    delay(1000);    // delay since esp32 s3 has a faster boot time than regular esp32
     Serial.begin(115200);
     Serial.println("=== COMBINED_BLE startup ===");
 

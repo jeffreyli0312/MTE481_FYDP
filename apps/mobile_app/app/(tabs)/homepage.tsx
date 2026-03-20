@@ -76,8 +76,7 @@ export default function HomePageScreen() {
           </View>
 
           <Button mode="outlined" onPress={handleLogout} compact textColor={colors.error}>
-            Logout
-          </Button>
+            Logout          </Button>
         </View>
 
         {/* Welcome Card */}

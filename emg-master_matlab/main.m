@@ -4,7 +4,7 @@ clear; clc;
 % Connect to the ESP32 using the settings from your screenshot
 % If 'a' already exists in the workspace, this line might error, so clear first.
 try
-    a = arduino('/dev/cu.usbserial-0001', 'ESP32-WROOM-DevKitC', 'Libraries', {'I2C', 'SPI', 'Servo'});
+    a = arduino('COM3', 'ESP32-WROOM-DevKitC', 'Libraries', {'I2C', 'SPI'});
     disp('Connection Successful!');
 catch e
     disp('Connection Failed or already open. Try clearing workspace (clear a).');
