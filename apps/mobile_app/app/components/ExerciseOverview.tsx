@@ -167,15 +167,7 @@ export default function ExerciseOverview({
             <>
               {!devMode ? (
                 <>
-                  <Text
-                    variant="bodySmall"
-                    style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
-                  >
-                    Saved MVC values (read-only). Turn on{" "}
-                    <Text style={{ fontWeight: "700" }}>Developer mode</Text> in Settings
-                    to edit values or run Calibrate.
-                  </Text>
-                  <View style={{ marginTop: 10, gap: 8 }}>
+                  <View style={{ marginTop: 6, gap: 8 }}>
                     {EMG_CHANNELS.map((ch) => (
                       <Text
                         key={ch}
