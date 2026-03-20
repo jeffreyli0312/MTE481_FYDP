@@ -90,6 +90,33 @@ export type EmgChannel =
   | "emg_right_tricep"
   | "emg_right_pec";
 
+// ─── Hardcoded calibration (for % MVC conversion) ─────────────────────────────
+// For sensor testing: uncomment the next line to use small MVC values so low
+// raw EMG output is magnified in the % MVC display.
+const USE_TEST_CALIBRATION = true;
+// const USE_TEST_CALIBRATION = false;
+
+/** Default MVC values per channel (normal use). */
+export const DEFAULT_MVC_VALUES: Record<EmgChannel, number> = {
+  emg_left_tricep: 0.5,
+  emg_left_pec: 0.5,
+  emg_right_tricep: 0.5,
+  emg_right_pec: 0.5,
+};
+
+/** Small values for sensor testing – use when raw EMG output is low. */
+const TEST_MVC_VALUES: Record<EmgChannel, number> = {
+  emg_left_tricep: 0.05,
+  emg_left_pec: 0.05,
+  emg_right_tricep: 0.05,
+  emg_right_pec: 0.05,
+};
+
+/** Active calibration values – switch via USE_TEST_CALIBRATION above. */
+export const MVC_VALUES: Record<EmgChannel, number> = USE_TEST_CALIBRATION
+  ? TEST_MVC_VALUES
+  : DEFAULT_MVC_VALUES;
+
 export type CalibrationRow = {
   id: number;
   user_id: string;
@@ -158,6 +185,9 @@ export function initBleDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_sets_session ON sets(session_id);
 
+    /* samples: stores EMG values as parsed from BLE (firmware int16 ÷ 1000).
+       Raw values – no baseline subtraction at insert. Baseline is in sets table,
+       applied when reading. */
     CREATE TABLE IF NOT EXISTS samples (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
@@ -356,6 +386,11 @@ export function deleteSession(sessionId: string) {
   db.runSync(`DELETE FROM sessions WHERE id = ?`, [sessionId]);
 }
 
+/**
+ * Inserts a sample. EMG values are stored as received from parsePacket:
+ * firmware sends int16 × 1000, we store float (÷ 1000). No baseline subtraction
+ * at insert – baseline is stored per-set and applied when reading.
+ */
 export function insertSample(args: {
   userId: string;
   sessionId: string;

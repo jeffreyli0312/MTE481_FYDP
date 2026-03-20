@@ -18,11 +18,10 @@ import {
   insertSample,
     parsePacket,
     countSamplesForSet,
-    getLatestCalibration,
     saveBaselineOffsets,
+    MVC_VALUES,
     insertRep,
     updateSetRepCount,
-    type CalibrationRow,
     type EmgChannel,
   } from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
@@ -63,10 +62,9 @@ export default function SessionView({
   const baselineSamplesRef = useRef<{ emg_left_tricep: number[]; emg_left_pec: number[]; emg_right_tricep: number[]; emg_right_pec: number[] }>({ emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [] });
   const baselineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // MVC calibration (still used for per-rep EMG metrics)
-  const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
-  const mvcValue = calibration?.mvc_value ?? 0;
-  const calibratedChannel = (calibration?.emg_channel ?? "emg_left_pec") as EmgChannel;
+  // Use MVC_VALUES for per-rep EMG metrics (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing)
+  const calibratedChannel: EmgChannel = "emg_left_pec";
+  const mvcValue = MVC_VALUES[calibratedChannel];
 
   // Pitch-based Schmitt trigger rep counter (uses left IMU)
   const PITCH_UPPER_THRESHOLD = 15; // degrees deviation from rest to start a rep
@@ -82,12 +80,6 @@ export default function SessionView({
   const repStartMsRef = useRef(0);
   const repEmgAccRef = useRef<number[]>([]);
   const repPeakEmgRef = useRef(0);
-
-  // Load calibration on mount — session row is NOT inserted until first set starts
-  useEffect(() => {
-    const cal = getLatestCalibration(userId, exerciseName);
-    setCalibration(cal);
-  }, []);
 
   React.useEffect(() => {
     if (!sessionTimerRunning) return;
@@ -527,7 +519,6 @@ export default function SessionView({
                   params: {
                     setId: set.id,
                     source: "sqlite",
-                    ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
                   },
                 })
               }

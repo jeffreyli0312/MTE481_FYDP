@@ -18,7 +18,6 @@ import {
   listSets as listSqliteSets,
   listSamplesForSet,
   listRepsForSet,
-  getLatestCalibration,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth, emaSmooth } from "../utils/format";
@@ -128,7 +127,6 @@ export default function SessionSetsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrMsg] = useState<string | null>(null);
-  const [mvcValue, setMvcValue] = useState(0);
 
   const [sets, setSets] = useState<DisplaySetRow[]>([]);
   const [setDuration, setSetDuration] = useState<Record<string, string>>({});
@@ -154,12 +152,6 @@ export default function SessionSetsScreen() {
 
         if (isSqlite) {
           initBleDb();
-
-          let mvc = 0;
-          if (user?.id) {
-            const cal = getLatestCalibration(user.id, (title as string) ?? "Bench Press");
-            if (cal) { mvc = cal.mvc_value; if (!cancelled) setMvcValue(mvc); }
-          }
 
           const sqliteSets = listSqliteSets(sessionId) as LocalSetRow[];
 
@@ -582,7 +574,6 @@ export default function SessionSetsScreen() {
                       setId: st.id,
                       source: isSqlite ? "sqlite" : "supabase",
                       label: (title as string) ?? undefined,
-                      ...(mvcValue > 0 ? { mvcValue: String(mvcValue) } : {}),
                     },
                   })
                 }

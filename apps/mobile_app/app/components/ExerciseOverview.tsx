@@ -1,14 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
-import { useAuth } from "../context/AuthContext";
-import {
-  getLatestCalibration,
-  type CalibrationRow,
-} from "../sqlite/bleDb";
-import MvcCalibrationView from "./MvcCalibrationView";
+import { MVC_VALUES } from "../sqlite/bleDb";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,17 +11,6 @@ interface ExerciseOverviewProps {
   exerciseName: string;
   onBack: () => void;
   onStartNewSession: () => void;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatDateFromMs(ms: number | null): string {
-  if (!ms) return "—";
-  return new Date(ms).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -37,33 +21,6 @@ export default function ExerciseOverview({
   onStartNewSession,
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
-  const { user } = useAuth();
-
-  const [calibrationMode, setCalibrationMode] = useState(false);
-  const [calibration, setCalibration] = useState<CalibrationRow | null>(null);
-
-  const loadCalibration = React.useCallback(() => {
-    if (!user?.id) return;
-    const cal = getLatestCalibration(user.id, exerciseName);
-    setCalibration(cal);
-  }, [user?.id, exerciseName]);
-
-  useEffect(() => {
-    loadCalibration();
-  }, [loadCalibration]);
-
-  if (calibrationMode) {
-    return (
-      <MvcCalibrationView
-        exerciseName={exerciseName}
-        onBack={() => setCalibrationMode(false)}
-        onComplete={() => {
-          setCalibrationMode(false);
-          loadCalibration();
-        }}
-      />
-    );
-  }
 
   const CHANNEL_LABELS: Record<string, string> = {
     emg_left_tricep: "Left Tricep",
@@ -90,7 +47,7 @@ export default function ExerciseOverview({
         {exerciseName}
       </Text>
 
-      {/* MVC Calibration Card */}
+      {/* Hardcoded calibration (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing) */}
       <Card style={styles.mvcCard} mode="outlined">
         <Card.Content>
           <View style={styles.topRow}>
@@ -98,69 +55,23 @@ export default function ExerciseOverview({
               variant="titleSmall"
               style={{ color: colors.onSurface, fontWeight: "900" }}
             >
-              MVC Calibration
+              EMG Calibration
             </Text>
             <Feather name="zap" size={16} color={colors.primary} />
           </View>
-          {calibration ? (
-            <>
-              <View style={{ marginTop: 8 }}>
-                <Text
-                  variant="bodySmall"
-                  style={{ color: colors.onSurfaceVariant }}
-                >
-                  Channel:{" "}
-                  {CHANNEL_LABELS[calibration.emg_channel] ??
-                    calibration.emg_channel}
-                </Text>
-                <Text
-                  variant="titleMedium"
-                  style={{
-                    color: colors.primary,
-                    fontWeight: "900",
-                    marginTop: 2,
-                  }}
-                >
-                  MVC: {calibration.mvc_value.toFixed(4)}
-                </Text>
-                <Text
-                  variant="labelSmall"
-                  style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
-                >
-                  Calibrated: {formatDateFromMs(calibration.calibrated_at)}
-                </Text>
-              </View>
-              <Button
-                mode="outlined"
-                onPress={() => setCalibrationMode(true)}
-                compact
-                style={{ marginTop: 10, alignSelf: "flex-start" }}
-                icon="refresh-cw"
-              >
-                Recalibrate
-              </Button>
-            </>
-          ) : (
-            <>
-              <Text
-                variant="bodySmall"
-                style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
-              >
-                Calibrate your MVC to normalize EMG data and enable rep
-                counting.
+          <Text
+            variant="bodySmall"
+            style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+          >
+            Per-channel MVC values:
+          </Text>
+          <View style={{ marginTop: 8, gap: 4 }}>
+            {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
+              <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
+                {CHANNEL_LABELS[ch]}: {MVC_VALUES[ch].toFixed(4)}
               </Text>
-              <Button
-                mode="contained"
-                onPress={() => setCalibrationMode(true)}
-                icon="flash"
-                style={{ marginTop: 10 }}
-                buttonColor={colors.primary}
-                textColor={colors.onPrimary}
-              >
-                Calibrate MVC
-              </Button>
-            </>
-          )}
+            ))}
+          </View>
         </Card.Content>
       </Card>
 

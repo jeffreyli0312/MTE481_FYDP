@@ -25,9 +25,9 @@ import { useAppTheme } from "../theme";
 import {
   initBleDb,
   listSamplesForSet,
-  getLatestCalibration,
   getBaselineOffsets,
   listRepsForSet,
+  MVC_VALUES,
   type RepRow,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
@@ -211,13 +211,11 @@ export default function SetAnalyticsScreen() {
     label,
     created_at,
     source,
-    mvcValue: mvcParam,
   } = useLocalSearchParams<{
     setId: string;
     label?: string;
     created_at?: string;
     source?: string;
-    mvcValue?: string;
   }>();
 
   const isSqlite = source === "sqlite";
@@ -264,16 +262,8 @@ export default function SetAnalyticsScreen() {
         setErr(null);
         if (!setId) throw new Error("Missing setId");
 
-        // Resolve MVC value: from param or from DB
-        let mvc = mvcParam ? parseFloat(mvcParam) : 0;
-        if (!mvc && isSqlite && user?.id) {
-          const cal = getLatestCalibration(
-            user.id,
-            (label as string) ?? "Bench Press",
-          );
-          if (cal) mvc = cal.mvc_value;
-        }
-        if (!cancelled) setMvcValue(mvc);
+        // Use hardcoded MVC_VALUES (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing)
+        if (!cancelled) setMvcValue(MVC_VALUES.emg_left_pec);
 
         if (isSqlite) {
           initBleDb();
@@ -312,6 +302,7 @@ export default function SetAnalyticsScreen() {
               .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
               .map((r) => {
                 const v = Number(r[key]);
+                const mvc = MVC_VALUES[key];
                 return { time: r.time, value: mvc > 0 ? (v / mvc) * 100 : v };
               })
               .sort((a, b) => a.time - b.time);
@@ -449,7 +440,7 @@ export default function SetAnalyticsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [setId, isSqlite, label, mvcParam, user?.id]);
+  }, [setId, isSqlite, label, user?.id]);
 
   const baseWidth = screenWidth - 32;
   const displayMaxPoints = 300;
