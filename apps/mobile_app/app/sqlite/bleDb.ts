@@ -91,9 +91,9 @@ export type EmgChannel =
   | "emg_right_pec";
 
 // ─── Calibration (for % MVC conversion) ───────────────────────────────────────
-// USE_HARDCODED_CALIBRATION: when true, always use hardcoded MVC values.
+// USE_HARDCODED_CALIBRATION: when true, always use hardcoded MVC values (ignores DB).
 // When false, use calibrations from DB (from MvcCalibrationView); fallback to hardcoded if none.
-const USE_HARDCODED_CALIBRATION = true;
+const USE_HARDCODED_CALIBRATION = false;
 
 // For sensor testing: use small MVC values so low raw EMG output is magnified.
 const USE_TEST_CALIBRATION = true;
@@ -611,6 +611,7 @@ export function saveCalibration(
   emgChannel: EmgChannel,
   mvcValue: number,
 ) {
+  initBleDb();
   const db = getDb();
   const existing = db.getFirstSync<{ id: number }>(
     `SELECT id FROM calibrations WHERE user_id = ? AND exercise_name = ? AND emg_channel = ?`,
