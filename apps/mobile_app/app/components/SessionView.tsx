@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
-import { formatMMSS, MovingAverage } from "../utils/format";
+import { formatMMSS } from "../utils/format";
 import BackButton from "./BackButton";
 import DeviceConnectionCard from "./DeviceConnectionCard";
 import {
@@ -18,7 +18,6 @@ import {
   parsePacket,
   countSamplesForSet,
   saveBaselineOffsets,
-  getMvcValue,
   insertRep,
   updateSetRepCount,
   type EmgChannel,
@@ -50,7 +49,7 @@ export default function SessionView({
   const [sessionTimerRunning, setSessionTimerRunning] = useState(true);
 
   const [isRecording, setIsRecording] = useState(false);
-  /** Pre-recording warmup: EMG still (1) then bench setup / IMU lock (2). */
+  /** Pre-recording: EMG baseline (3s), then get into position (3s). */
   const [isWarmup, setIsWarmup] = useState(false);
   const [warmupPhase, setWarmupPhase] = useState<1 | 2>(1);
   const [warmupProgress, setWarmupProgress] = useState(0);
@@ -63,24 +62,20 @@ export default function SessionView({
   const baselineSamplesRef = useRef<{ emg_left_tricep: number[]; emg_left_pec: number[]; emg_right_tricep: number[]; emg_right_pec: number[] }>({ emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [] });
   const baselineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // MVC from SQLite calibrations only (see getMvcValue in bleDb).
+  /** EMG channel used for per-rep peak/mean in the DB. */
   const calibratedChannel: EmgChannel = "emg_left_pec";
-  const mvcValue = getMvcValue(userId, exerciseName, calibratedChannel);
 
-  // Pitch-based Schmitt trigger rep counter (uses left IMU)
-  const PITCH_UPPER_THRESHOLD = 15; // degrees deviation from rest to start a rep
-  const PITCH_LOWER_THRESHOLD = 5;  // degrees deviation from rest to end a rep
+  /** Rep window length on device sample clock (internal; not shown in UI). */
+  const REP_DURATION_MS = 3000;
+
   const [repCount, setRepCount] = useState(0);
   const repCountRef = useRef(0);
-  const schmittStateRef = useRef<"low" | "high">("low");
-  const pitchMaRef = useRef(new MovingAverage(10));
-  /** Left IMU pitch (deg) used as “arms locked out” / rest reference for rep Schmitt trigger. */
-  const restingPitchRef = useRef(0);
-  /** Pitch samples during phase 2 (get into bench) — resting pitch taken from end of this window. */
-  const setupPitchSamplesRef = useRef<number[]>([]);
 
-  // Per-rep tracking
-  const repStartMsRef = useRef(0);
+  /** Device `t_ms` rep window end; first recording sample sets initial boundary. */
+  const nextRepEndMsRef = useRef(0);
+  const repTimingStartedRef = useRef(false);
+  const lastSampleTmsRef = useRef(0);
+
   const repEmgAccRef = useRef<number[]>([]);
   const repPeakEmgRef = useRef(0);
 
@@ -114,17 +109,8 @@ export default function SessionView({
   }
 
   const EMG_STILL_MS = 3000;
-  const BENCH_SETUP_MS = 3000;
+  const GET_INTO_POSITION_MS = 3000;
   const EMG_KEYS = ["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const;
-
-  /** Use mean pitch from the last fraction of setup samples so “rest” matches settled bench position. */
-  function computeRestingPitchFromSetupSamples(samples: number[]): number {
-    if (samples.length === 0) return 0;
-    const start = Math.max(0, Math.floor(samples.length * 0.65));
-    const tail = samples.slice(start);
-    const use = tail.length >= 3 ? tail : samples;
-    return use.reduce((s, v) => s + v, 0) / use.length;
-  }
 
   function startRecording() {
     const setId = `set_${Date.now()}`;
@@ -149,11 +135,9 @@ export default function SessionView({
     });
 
     repCountRef.current = 0;
-    schmittStateRef.current = "low";
-    pitchMaRef.current.reset();
-    restingPitchRef.current = 0;
-    setupPitchSamplesRef.current = [];
-    repStartMsRef.current = 0;
+    repTimingStartedRef.current = false;
+    nextRepEndMsRef.current = 0;
+    lastSampleTmsRef.current = 0;
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
     setRepCount(0);
@@ -169,11 +153,11 @@ export default function SessionView({
     setWarmupPhase(1);
     setIsWarmup(true);
 
-    startWarmupPhase1EmgStill();
+    startWarmupEmgStill();
   }
 
-  /** Phase 1: stay still — EMG baseline only (no IMU rest lock yet). */
-  function startWarmupPhase1EmgStill() {
+  /** Phase 1: stay still — EMG baseline only. */
+  function startWarmupEmgStill() {
     setWarmupPhase(1);
     setWarmupProgress(0);
     const startTime = Date.now();
@@ -194,13 +178,14 @@ export default function SessionView({
       if (elapsed >= EMG_STILL_MS) {
         clearInterval(interval);
         baselineTimerRef.current = null;
-        finishWarmupPhase1AndStartPhase2();
+        finishWarmupPhase1AndStartPositionDelay();
       }
     }, 100);
     baselineTimerRef.current = interval;
   }
 
-  function finishWarmupPhase1AndStartPhase2() {
+  /** After EMG baseline: apply offsets, then 3s delay to get into position (no logging to set). */
+  function finishWarmupPhase1AndStartPositionDelay() {
     ble.stopLogging();
 
     for (const k of EMG_KEYS) {
@@ -214,40 +199,47 @@ export default function SessionView({
       saveBaselineOffsets(currentSetIdRef.current, emgOffsetRef.current);
     }
 
-    setupPitchSamplesRef.current = [];
     setWarmupPhase(2);
     setWarmupProgress(0);
 
     const startTime = Date.now();
-    ble.startLogging((batch) => {
-      for (const bytes of batch) {
-        const parsed = parsePacket(bytes);
-        if (!parsed) continue;
-        setupPitchSamplesRef.current.push(parsed.l_pitch);
-      }
-    });
-
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
-      setWarmupProgress(Math.min(elapsed / BENCH_SETUP_MS, 1));
-      if (elapsed >= BENCH_SETUP_MS) {
+      setWarmupProgress(Math.min(elapsed / GET_INTO_POSITION_MS, 1));
+      if (elapsed >= GET_INTO_POSITION_MS) {
         clearInterval(interval);
         baselineTimerRef.current = null;
-        finishWarmupPhase2AndStartRecording();
+        startRecordingAfterWarmup();
       }
     }, 100);
     baselineTimerRef.current = interval;
   }
 
-  /** Phase 2 done: lock IMU rest pitch, then continuous recording + rep counting. */
-  function finishWarmupPhase2AndStartRecording() {
-    ble.stopLogging();
+  function flushTimedRepAtBoundary(setIdCurrent: string, repEndMs: number) {
+    const acc = repEmgAccRef.current;
+    const repStartMs = repEndMs - REP_DURATION_MS;
+    const meanEmg =
+      acc.length > 0 ? acc.reduce((s, v) => s + v, 0) / acc.length : 0;
+    repCountRef.current += 1;
+    insertRep({
+      setId: setIdCurrent,
+      repNumber: repCountRef.current,
+      startMs: repStartMs,
+      endMs: repEndMs,
+      peakEmg: repPeakEmgRef.current,
+      meanEmg,
+    });
+    repEmgAccRef.current = [];
+    repPeakEmgRef.current = 0;
+  }
 
-    restingPitchRef.current = computeRestingPitchFromSetupSamples(
-      setupPitchSamplesRef.current,
-    );
-    pitchMaRef.current.reset();
-    schmittStateRef.current = "low";
+  /** After position delay: start logging samples and rep boundaries (device clock). */
+  function startRecordingAfterWarmup() {
+    repTimingStartedRef.current = false;
+    nextRepEndMsRef.current = 0;
+    lastSampleTmsRef.current = 0;
+    repEmgAccRef.current = [];
+    repPeakEmgRef.current = 0;
 
     setIsWarmup(false);
     setIsRecording(true);
@@ -264,43 +256,25 @@ export default function SessionView({
         if (parsed) {
           insertSample({ userId, sessionId: sid, setId: setIdCurrent, parsed });
           count++;
+          lastSampleTmsRef.current = parsed.t_ms;
 
-          // Pitch-based rep detection using left IMU
-          const smoothedPitch = pitchMaRef.current.push(parsed.l_pitch);
-          const pitchDelta = Math.abs(smoothedPitch - restingPitchRef.current);
+          if (!repTimingStartedRef.current) {
+            repTimingStartedRef.current = true;
+            nextRepEndMsRef.current = parsed.t_ms + REP_DURATION_MS;
+          }
 
-          // Track EMG during the rep for per-rep metrics
-          const correctedEmg = mvcValue > 0
-            ? Math.max(0, parsed[calibratedChannel] - emgOffsetRef.current[calibratedChannel])
-            : 0;
+          while (parsed.t_ms >= nextRepEndMsRef.current) {
+            flushTimedRepAtBoundary(setIdCurrent, nextRepEndMsRef.current);
+            nextRepEndMsRef.current += REP_DURATION_MS;
+          }
 
-          if (schmittStateRef.current === "low" && pitchDelta >= PITCH_UPPER_THRESHOLD) {
-            schmittStateRef.current = "high";
-            repStartMsRef.current = parsed.t_ms;
-            repEmgAccRef.current = [correctedEmg];
+          const correctedEmg = Math.max(
+            0,
+            parsed[calibratedChannel] - emgOffsetRef.current[calibratedChannel],
+          );
+          repEmgAccRef.current.push(correctedEmg);
+          if (correctedEmg > repPeakEmgRef.current) {
             repPeakEmgRef.current = correctedEmg;
-          } else if (schmittStateRef.current === "high") {
-            repEmgAccRef.current.push(correctedEmg);
-            if (correctedEmg > repPeakEmgRef.current) repPeakEmgRef.current = correctedEmg;
-
-            if (pitchDelta <= PITCH_LOWER_THRESHOLD) {
-              schmittStateRef.current = "low";
-              repCountRef.current += 1;
-
-              const acc = repEmgAccRef.current;
-              const meanEmg = acc.length > 0
-                ? acc.reduce((s, v) => s + v, 0) / acc.length
-                : 0;
-
-              insertRep({
-                setId: setIdCurrent,
-                repNumber: repCountRef.current,
-                startMs: repStartMsRef.current,
-                endMs: parsed.t_ms,
-                peakEmg: repPeakEmgRef.current,
-                meanEmg,
-              });
-            }
           }
         }
       }
@@ -311,7 +285,31 @@ export default function SessionView({
     });
   }
 
+  function flushPartialRepIfAny(setIdCurrent: string) {
+    if (repEmgAccRef.current.length === 0) return;
+    const endMs = lastSampleTmsRef.current;
+    const repStartMs = nextRepEndMsRef.current - REP_DURATION_MS;
+    const acc = repEmgAccRef.current;
+    const meanEmg =
+      acc.length > 0 ? acc.reduce((s, v) => s + v, 0) / acc.length : 0;
+    repCountRef.current += 1;
+    insertRep({
+      setId: setIdCurrent,
+      repNumber: repCountRef.current,
+      startMs: repStartMs,
+      endMs,
+      peakEmg: repPeakEmgRef.current,
+      meanEmg,
+    });
+    repEmgAccRef.current = [];
+    repPeakEmgRef.current = 0;
+  }
+
   function endRecording() {
+    const setIdCurrent = currentSetIdRef.current;
+    if (setIdCurrent) {
+      flushPartialRepIfAny(setIdCurrent);
+    }
     ble.stopLogging();
     setIsRecording(false);
     setSetTimerRunning(false);
@@ -431,8 +429,7 @@ export default function SessionView({
                       marginBottom: 12,
                     }}
                   >
-                    Stay still for 3 seconds while we measure your EMG baseline (muscle noise
-                    floor).
+                    Stay still for 3 seconds while we measure your EMG baseline.
                   </Text>
                 </>
               ) : (
@@ -462,9 +459,8 @@ export default function SessionView({
                       marginBottom: 12,
                     }}
                   >
-                    You have 3 seconds to get into your start position for {exerciseName}{" "}
-                    (e.g. arms extended at the top for bench). When this bar finishes we lock
-                    your IMU angle for rep counting.
+                    You have 3 seconds to get ready for {exerciseName}. Recording will start
+                    when the bar completes.
                   </Text>
                 </>
               )}
@@ -477,9 +473,7 @@ export default function SessionView({
           ) : isRecording ? (
             <>
               <View style={{ alignItems: "center", marginBottom: 6 }}>
-                <Badge style={{ backgroundColor: colors.danger }}>
-                  Step 3 — Recording
-                </Badge>
+                <Badge style={{ backgroundColor: colors.danger }}>Step 3 — Recording</Badge>
               </View>
 
               <Text
