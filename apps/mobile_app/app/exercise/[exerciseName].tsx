@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ScrollView, StatusBar } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useAppTheme } from "../theme";
+import { useDevMode } from "../context/DevModeContext";
 import ExerciseOverview from "../components/ExerciseOverview";
 import SessionView from "../components/SessionView";
 import MvcCalibrationView from "../components/MvcCalibrationView";
@@ -12,10 +13,15 @@ type ExerciseMode = "overview" | "session" | "calibration";
 
 export default function ExerciseScreen() {
   const { colors, dark } = useAppTheme();
+  const { devMode } = useDevMode();
   const { exerciseName } = useLocalSearchParams<{ exerciseName: string }>();
   const name = exerciseName ?? "Exercise";
 
   const [mode, setMode] = useState<ExerciseMode>("overview");
+
+  useEffect(() => {
+    if (!devMode && mode === "calibration") setMode("overview");
+  }, [devMode, mode]);
 
   function handleEndSession(session: SessionRecord) {
     // Navigate to the session detail — this pushes onto the stack naturally
@@ -50,7 +56,9 @@ export default function ExerciseScreen() {
               exerciseName={name}
               onBack={() => router.back()}
               onStartNewSession={() => setMode("session")}
-              onStartCalibration={() => setMode("calibration")}
+              onStartCalibration={
+                devMode ? () => setMode("calibration") : undefined
+              }
             />
           )}
         </ScrollView>

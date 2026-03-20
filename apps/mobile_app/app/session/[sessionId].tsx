@@ -18,7 +18,9 @@ import {
   listSets as listSqliteSets,
   listAllSamplesForSet,
   listRepsForSet,
+  getBaselineOffsets,
 } from "../sqlite/bleDb";
+import { leftRightImbalancePct } from "../utils/muscleImbalance";
 import { useAuth } from "../context/AuthContext";
 import { pseudoRandomShoulderFlareDeg } from "../utils/mockShoulderFlare";
 import {
@@ -30,6 +32,7 @@ const FLARE_THRESHOLD = 45; // degrees
 const FAST_REP_MS = 800; // rep < 0.8s is too fast
 const SLOW_REP_MS = 2500; // rep > 2.5s might be too slow / need more tension
 const HIGH_FATIGUE_PCT = 30;
+const HIGH_IMBALANCE_PCT = 18;
 
 type SupabaseSetRow = {
   id: string;
@@ -84,6 +87,8 @@ function getRecommendations(analytics: {
   avgRestTimeMs: number;
   maxFlareDeg: number;
   fatigueIndexPct: number | null;
+  pecImbalancePct: number | null;
+  tricepImbalancePct: number | null;
 }): string[] {
   const tips: string[] = [];
   if (analytics.maxFlareDeg > FLARE_THRESHOLD) {
@@ -109,6 +114,22 @@ function getRecommendations(analytics: {
   if (analytics.fatigueIndexPct != null && analytics.fatigueIndexPct > HIGH_FATIGUE_PCT) {
     tips.push(
       `High fatigue detected (${analytics.fatigueIndexPct}% drop in peak EMG). Reduce reps per set or add more rest to maintain quality.`
+    );
+  }
+  if (
+    analytics.pecImbalancePct != null &&
+    analytics.pecImbalancePct > HIGH_IMBALANCE_PCT
+  ) {
+    tips.push(
+      `Pec imbalance (~${analytics.pecImbalancePct}% L/R): try single-arm work or pause reps on the weaker side to even out activation.`
+    );
+  }
+  if (
+    analytics.tricepImbalancePct != null &&
+    analytics.tricepImbalancePct > HIGH_IMBALANCE_PCT
+  ) {
+    tips.push(
+      `Tricep imbalance (~${analytics.tricepImbalancePct}% L/R): check elbow tracking and consider unilateral presses or push-downs on the lagging arm.`
     );
   }
   if (tips.length === 0 && analytics.totalReps > 0) {
@@ -142,6 +163,8 @@ export default function SessionSetsScreen() {
     maxFlareDeg: number;
     fatigueIndexPct: number | null;
     totalDurationMs: number;
+    pecImbalancePct: number | null;
+    tricepImbalancePct: number | null;
   } | null>(null);
 
   useEffect(() => {
@@ -264,6 +287,50 @@ export default function SessionSetsScreen() {
             fatigueIndexPct = Math.round(((first - last) / first) * 100);
           }
 
+          let sumPecL = 0;
+          let sumPecR = 0;
+          let sumTriL = 0;
+          let sumTriR = 0;
+          let imbalanceSampleN = 0;
+          for (const st of sqliteSets) {
+            const samps = listAllSamplesForSet(st.id);
+            if (samps.length === 0) continue;
+            const bl = getBaselineOffsets(st.id);
+            for (const s of samps) {
+              sumPecL += Math.max(
+                0,
+                Number(s.emg_left_pec ?? 0) - bl.emg_left_pec,
+              );
+              sumPecR += Math.max(
+                0,
+                Number(s.emg_right_pec ?? 0) - bl.emg_right_pec,
+              );
+              sumTriL += Math.max(
+                0,
+                Number(s.emg_left_tricep ?? 0) - bl.emg_left_tricep,
+              );
+              sumTriR += Math.max(
+                0,
+                Number(s.emg_right_tricep ?? 0) - bl.emg_right_tricep,
+              );
+              imbalanceSampleN++;
+            }
+          }
+          const pecImbalancePct =
+            imbalanceSampleN > 0
+              ? leftRightImbalancePct(
+                  sumPecL / imbalanceSampleN,
+                  sumPecR / imbalanceSampleN,
+                )
+              : null;
+          const tricepImbalancePct =
+            imbalanceSampleN > 0
+              ? leftRightImbalancePct(
+                  sumTriL / imbalanceSampleN,
+                  sumTriR / imbalanceSampleN,
+                )
+              : null;
+
           if (!cancelled) {
             setSets(mappedSets);
             setSetDuration(nextDur);
@@ -275,6 +342,8 @@ export default function SessionSetsScreen() {
               maxFlareDeg,
               fatigueIndexPct,
               totalDurationMs,
+              pecImbalancePct,
+              tricepImbalancePct,
             });
             setLoading(false);
           }
@@ -488,7 +557,9 @@ export default function SessionSetsScreen() {
                         fontWeight: "800",
                       }}
                     >
-                      {sessionAnalytics.maxFlareDeg.toFixed(0)}\u00B0
+                      {Number.isFinite(sessionAnalytics.maxFlareDeg)
+                        ? `${sessionAnalytics.maxFlareDeg.toFixed(0)}\u00B0`
+                        : "\u2014"}
                     </Text>
                   </View>
                   <View style={styles.analyticsItem}>
@@ -504,6 +575,42 @@ export default function SessionSetsScreen() {
                       }}
                     >
                       {sessionAnalytics.fatigueIndexPct != null ? `${sessionAnalytics.fatigueIndexPct}%` : "\u2014"}
+                    </Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Pec L/R imbalance</Text>
+                    <Text
+                      variant="titleMedium"
+                      style={{
+                        color:
+                          sessionAnalytics.pecImbalancePct != null &&
+                          sessionAnalytics.pecImbalancePct > HIGH_IMBALANCE_PCT
+                            ? "#dc2626"
+                            : colors.onSurface,
+                        fontWeight: "800",
+                      }}
+                    >
+                      {sessionAnalytics.pecImbalancePct != null
+                        ? `${sessionAnalytics.pecImbalancePct}%`
+                        : "\u2014"}
+                    </Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Tricep L/R imbalance</Text>
+                    <Text
+                      variant="titleMedium"
+                      style={{
+                        color:
+                          sessionAnalytics.tricepImbalancePct != null &&
+                          sessionAnalytics.tricepImbalancePct > HIGH_IMBALANCE_PCT
+                            ? "#dc2626"
+                            : colors.onSurface,
+                        fontWeight: "800",
+                      }}
+                    >
+                      {sessionAnalytics.tricepImbalancePct != null
+                        ? `${sessionAnalytics.tricepImbalancePct}%`
+                        : "\u2014"}
                     </Text>
                   </View>
                 </View>

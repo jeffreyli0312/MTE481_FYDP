@@ -4,6 +4,7 @@ import { Card, Text, Button, TextInput } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
+import { useDevMode } from "../context/DevModeContext";
 import {
   getMvcValues,
   saveCalibration,
@@ -52,6 +53,7 @@ export default function ExerciseOverview({
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
   const { user } = useAuth();
+  const { devMode } = useDevMode();
   const [calibrationExpanded, setCalibrationExpanded] = useState(false);
   const [mvcRefreshKey, setMvcRefreshKey] = useState(0);
   const [draftMvc, setDraftMvc] = useState<Record<EmgChannel, string>>(emptyDrafts);
@@ -163,71 +165,98 @@ export default function ExerciseOverview({
           </View>
           {calibrationExpanded && (
             <>
-              <Text
-                variant="bodySmall"
-                style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
-              >
-                Per-channel MVC (peak − baseline RMS). Edit and save, or use Calibrate to measure.
-              </Text>
-              <View style={{ marginTop: 10, gap: 10 }}>
-                {EMG_CHANNELS.map((ch) => (
-                  <View key={ch}>
-                    <Text
-                      variant="labelMedium"
-                      style={{ color: colors.onSurface, marginBottom: 4 }}
-                    >
-                      {CHANNEL_LABELS[ch]}
-                      <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant }}>
-                        {" "}
-                        (saved: {mvcValues[ch].toFixed(4)})
+              {!devMode ? (
+                <>
+                  <Text
+                    variant="bodySmall"
+                    style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+                  >
+                    Saved MVC values (read-only). Turn on{" "}
+                    <Text style={{ fontWeight: "700" }}>Developer mode</Text> in Settings
+                    to edit values or run Calibrate.
+                  </Text>
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {EMG_CHANNELS.map((ch) => (
+                      <Text
+                        key={ch}
+                        variant="bodyMedium"
+                        style={{ color: colors.onSurface }}
+                      >
+                        {CHANNEL_LABELS[ch]}:{" "}
+                        {mvcValues[ch] > 0 ? mvcValues[ch].toFixed(4) : "—"}
                       </Text>
-                    </Text>
-                    <TextInput
-                      mode="outlined"
-                      dense
-                      value={draftMvc[ch]}
-                      onChangeText={(t) => {
-                        setSaveMessage(null);
-                        setDraftMvc((prev) => ({ ...prev, [ch]: t }));
-                      }}
-                      placeholder="0 = not set"
-                      keyboardType="decimal-pad"
-                      style={{ backgroundColor: colors.surface }}
-                    />
+                    ))}
                   </View>
-                ))}
-              </View>
-              {saveError ? (
-                <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
-                  {saveError}
-                </Text>
-              ) : null}
-              {saveMessage && !saveError ? (
-                <Text variant="bodySmall" style={{ color: colors.success, marginTop: 8 }}>
-                  {saveMessage}
-                </Text>
-              ) : null}
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                <Button
-                  mode="outlined"
-                  onPress={handleResetDrafts}
-                  disabled={saving}
-                  style={{ flex: 1 }}
-                >
-                  Reset
-                </Button>
-                <Button
-                  mode="contained"
-                  onPress={handleSaveMvc}
-                  loading={saving}
-                  disabled={saving}
-                  style={{ flex: 1 }}
-                  buttonColor={colors.primary}
-                  textColor={colors.onPrimary}
-                >
-                  Save to DB
-                </Button>
-              </View>
+                </>
+              ) : (
+                <>
+                  <Text
+                    variant="bodySmall"
+                    style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+                  >
+                    Per-channel MVC (peak − baseline RMS). Edit and save, or use Calibrate to measure.
+                  </Text>
+                  <View style={{ marginTop: 10, gap: 10 }}>
+                    {EMG_CHANNELS.map((ch) => (
+                      <View key={ch}>
+                        <Text
+                          variant="labelMedium"
+                          style={{ color: colors.onSurface, marginBottom: 4 }}
+                        >
+                          {CHANNEL_LABELS[ch]}
+                          <Text variant="bodySmall" style={{ color: colors.onSurfaceVariant }}>
+                            {" "}
+                            (saved: {mvcValues[ch].toFixed(4)})
+                          </Text>
+                        </Text>
+                        <TextInput
+                          mode="outlined"
+                          dense
+                          value={draftMvc[ch]}
+                          onChangeText={(t) => {
+                            setSaveMessage(null);
+                            setDraftMvc((prev) => ({ ...prev, [ch]: t }));
+                          }}
+                          placeholder="0 = not set"
+                          keyboardType="decimal-pad"
+                          style={{ backgroundColor: colors.surface }}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                  {saveError ? (
+                    <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
+                      {saveError}
+                    </Text>
+                  ) : null}
+                  {saveMessage && !saveError ? (
+                    <Text variant="bodySmall" style={{ color: colors.success, marginTop: 8 }}>
+                      {saveMessage}
+                    </Text>
+                  ) : null}
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                    <Button
+                      mode="outlined"
+                      onPress={handleResetDrafts}
+                      disabled={saving}
+                      style={{ flex: 1 }}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={handleSaveMvc}
+                      loading={saving}
+                      disabled={saving}
+                      style={{ flex: 1 }}
+                      buttonColor={colors.primary}
+                      textColor={colors.onPrimary}
+                    >
+                      Save to DB
+                    </Button>
+                  </View>
+                </>
+              )}
             </>
           )}
         </Card.Content>

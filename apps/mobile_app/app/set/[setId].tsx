@@ -35,6 +35,7 @@ import {
   averageEstimatedRecoveryMs,
 } from "../utils/repAnalytics";
 import { pseudoRandomShoulderFlareDeg } from "../utils/mockShoulderFlare";
+import { leftRightImbalancePct } from "../utils/muscleImbalance";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth, emaSmooth } from "../utils/format";
 
@@ -133,6 +134,20 @@ function formatDurationFromMs(ms: number) {
 }
 
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
+
+const IMBALANCE_THRESHOLD_PCT = 18;
+
+function meanPointSeries(pts: Point[]): number | null {
+  if (!pts.length) return null;
+  let s = 0;
+  let n = 0;
+  for (const p of pts) {
+    if (!Number.isFinite(p.value)) continue;
+    s += p.value;
+    n++;
+  }
+  return n > 0 ? s / n : null;
+}
 
 async function fetchAllPages<T>(
   makeQuery: (from: number, to: number) => ReturnType<typeof supabase.from>,
@@ -621,6 +636,20 @@ export default function SetAnalyticsScreen() {
     return mx;
   }, [channelValues]);
 
+  const pecImbalancePct = useMemo(() => {
+    const L = meanPointSeries(emgChannelSeries.emg_left_pec);
+    const R = meanPointSeries(emgChannelSeries.emg_right_pec);
+    if (L == null || R == null) return null;
+    return leftRightImbalancePct(L, R);
+  }, [emgChannelSeries]);
+
+  const tricepImbalancePct = useMemo(() => {
+    const L = meanPointSeries(emgChannelSeries.emg_left_tricep);
+    const R = meanPointSeries(emgChannelSeries.emg_right_tricep);
+    if (L == null || R == null) return null;
+    return leftRightImbalancePct(L, R);
+  }, [emgChannelSeries]);
+
   // --- Per-rep derived metrics ---
 
   const avgRepTime = useMemo(
@@ -1071,6 +1100,36 @@ export default function SetAnalyticsScreen() {
             title="Max Flare"
             value={`${Math.abs(maxFlare)}°`}
             color={Math.abs(maxFlare) > FLARE_THRESHOLD ? "#ef4444" : "#22c55e"}
+          />
+          <StatCard
+            title="Pec L/R imbalance"
+            value={
+              pecImbalancePct != null ? `${pecImbalancePct}%` : "--"
+            }
+            color={
+              pecImbalancePct != null &&
+              pecImbalancePct > IMBALANCE_THRESHOLD_PCT
+                ? "#ef4444"
+                : pecImbalancePct != null &&
+                    pecImbalancePct > IMBALANCE_THRESHOLD_PCT / 2
+                  ? "#f59e0b"
+                  : "#22c55e"
+            }
+          />
+          <StatCard
+            title="Tricep L/R imbalance"
+            value={
+              tricepImbalancePct != null ? `${tricepImbalancePct}%` : "--"
+            }
+            color={
+              tricepImbalancePct != null &&
+              tricepImbalancePct > IMBALANCE_THRESHOLD_PCT
+                ? "#ef4444"
+                : tricepImbalancePct != null &&
+                    tricepImbalancePct > IMBALANCE_THRESHOLD_PCT / 2
+                  ? "#f59e0b"
+                  : "#22c55e"
+            }
           />
         </View>
       </ScrollView>
