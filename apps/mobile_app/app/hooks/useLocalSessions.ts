@@ -85,7 +85,14 @@ export function useLocalSessions(_userId?: string | undefined, exerciseName?: st
         };
       });
 
-      summaries.sort((a, b) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0));
+      summaries.sort((a, b) => {
+        const aMs = Number(a.startedAtMs ?? 0);
+        const bMs = Number(b.startedAtMs ?? 0);
+        if (bMs !== aMs) return bMs - aMs;
+        const aId = parseInt(a.id.replace(/^sess_/, ''), 10) || 0;
+        const bId = parseInt(b.id.replace(/^sess_/, ''), 10) || 0;
+        return bId - aId;
+      });
       setSessions(summaries);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load local sessions");
