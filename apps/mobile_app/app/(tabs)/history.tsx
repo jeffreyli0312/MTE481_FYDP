@@ -60,6 +60,7 @@ export default function HistoryScreen() {
               onPress={() => setSelectedExercise(null)}
               style={styles.chip}
               showSelectedOverlay
+              selectedColor={colors.primary}
             >
               All
             </Chip>
@@ -70,6 +71,7 @@ export default function HistoryScreen() {
                 onPress={() => setSelectedExercise(ex.name)}
                 style={styles.chip}
                 showSelectedOverlay
+                selectedColor={colors.primary}
               >
                 {ex.name}
               </Chip>
