@@ -65,19 +65,20 @@ export default function SessionView({
   /** EMG channel used for per-rep peak/mean in the DB. */
   const calibratedChannel: EmgChannel = "emg_left_pec";
 
-  /** Rep window length on device sample clock (internal; not shown in UI). */
+  /** Rep period in real time (wall clock). Device `t_ms` is only used for DB start/end stamps. */
   const REP_DURATION_MS = 3000;
 
   const [repCount, setRepCount] = useState(0);
   const repCountRef = useRef(0);
 
-  /** Device `t_ms` rep window end; first recording sample sets initial boundary. */
-  const nextRepEndMsRef = useRef(0);
-  const repTimingStartedRef = useRef(false);
   const lastSampleTmsRef = useRef(0);
+  /** Device `t_ms` at first sample of the current rep window (after last flush). */
+  const repDeviceStartMsRef = useRef(0);
 
   const repEmgAccRef = useRef<number[]>([]);
   const repPeakEmgRef = useRef(0);
+  /** Wall-clock rep ticks (every REP_DURATION_MS while recording). */
+  const repWallIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   React.useEffect(() => {
     if (!sessionTimerRunning) return;
@@ -100,6 +101,10 @@ export default function SessionView({
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
     if (baselineTimerRef.current) clearInterval(baselineTimerRef.current);
+    if (repWallIntervalRef.current) {
+      clearInterval(repWallIntervalRef.current);
+      repWallIntervalRef.current = null;
+    }
     await ble.reset();
     // Only end the session in the DB if it was actually created
     if (sessionInsertedRef.current) {
@@ -135,11 +140,14 @@ export default function SessionView({
     });
 
     repCountRef.current = 0;
-    repTimingStartedRef.current = false;
-    nextRepEndMsRef.current = 0;
+    repDeviceStartMsRef.current = 0;
     lastSampleTmsRef.current = 0;
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
+    if (repWallIntervalRef.current) {
+      clearInterval(repWallIntervalRef.current);
+      repWallIntervalRef.current = null;
+    }
     setRepCount(0);
     setSampleCount(0);
     setSetSeconds(0);
@@ -215,35 +223,54 @@ export default function SessionView({
     baselineTimerRef.current = interval;
   }
 
-  function flushTimedRepAtBoundary(setIdCurrent: string, repEndMs: number) {
+  /** Close current rep window (every REP_DURATION_MS wall time) and persist to DB. */
+  function flushRepFromWallClock(setIdCurrent: string) {
     const acc = repEmgAccRef.current;
-    const repStartMs = repEndMs - REP_DURATION_MS;
+    const endMs = lastSampleTmsRef.current;
+    const startMs =
+      acc.length > 0 ? repDeviceStartMsRef.current : endMs;
     const meanEmg =
       acc.length > 0 ? acc.reduce((s, v) => s + v, 0) / acc.length : 0;
+    const peakEmg = acc.length > 0 ? repPeakEmgRef.current : 0;
+
     repCountRef.current += 1;
     insertRep({
       setId: setIdCurrent,
       repNumber: repCountRef.current,
-      startMs: repStartMs,
-      endMs: repEndMs,
-      peakEmg: repPeakEmgRef.current,
+      startMs,
+      endMs,
+      peakEmg,
       meanEmg,
     });
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
+    setRepCount(repCountRef.current);
   }
 
-  /** After position delay: start logging samples and rep boundaries (device clock). */
+  /** After position delay: start logging samples; reps advance every REP_DURATION_MS (wall clock). */
   function startRecordingAfterWarmup() {
-    repTimingStartedRef.current = false;
-    nextRepEndMsRef.current = 0;
     lastSampleTmsRef.current = 0;
+    repDeviceStartMsRef.current = 0;
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
 
     setIsWarmup(false);
     setIsRecording(true);
     setSetTimerRunning(true);
+
+    if (repWallIntervalRef.current) {
+      clearInterval(repWallIntervalRef.current);
+      repWallIntervalRef.current = null;
+    }
+
+    const setIdForReps = currentSetIdRef.current;
+    if (setIdForReps) {
+      repWallIntervalRef.current = setInterval(() => {
+        const setIdCurrent = currentSetIdRef.current;
+        if (!setIdCurrent) return;
+        flushRepFromWallClock(setIdCurrent);
+      }, REP_DURATION_MS);
+    }
 
     ble.startLogging((batch) => {
       const sid = sessionIdRef.current;
@@ -258,14 +285,9 @@ export default function SessionView({
           count++;
           lastSampleTmsRef.current = parsed.t_ms;
 
-          if (!repTimingStartedRef.current) {
-            repTimingStartedRef.current = true;
-            nextRepEndMsRef.current = parsed.t_ms + REP_DURATION_MS;
-          }
-
-          while (parsed.t_ms >= nextRepEndMsRef.current) {
-            flushTimedRepAtBoundary(setIdCurrent, nextRepEndMsRef.current);
-            nextRepEndMsRef.current += REP_DURATION_MS;
+          if (repEmgAccRef.current.length === 0) {
+            repDeviceStartMsRef.current = parsed.t_ms;
+            repPeakEmgRef.current = 0;
           }
 
           const correctedEmg = Math.max(
@@ -280,7 +302,6 @@ export default function SessionView({
       }
       if (count > 0) {
         setSampleCount((prev) => prev + count);
-        setRepCount(repCountRef.current);
       }
     });
   }
@@ -288,7 +309,7 @@ export default function SessionView({
   function flushPartialRepIfAny(setIdCurrent: string) {
     if (repEmgAccRef.current.length === 0) return;
     const endMs = lastSampleTmsRef.current;
-    const repStartMs = nextRepEndMsRef.current - REP_DURATION_MS;
+    const repStartMs = repDeviceStartMsRef.current;
     const acc = repEmgAccRef.current;
     const meanEmg =
       acc.length > 0 ? acc.reduce((s, v) => s + v, 0) / acc.length : 0;
@@ -303,10 +324,15 @@ export default function SessionView({
     });
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
+    setRepCount(repCountRef.current);
   }
 
   function endRecording() {
     const setIdCurrent = currentSetIdRef.current;
+    if (repWallIntervalRef.current) {
+      clearInterval(repWallIntervalRef.current);
+      repWallIntervalRef.current = null;
+    }
     if (setIdCurrent) {
       flushPartialRepIfAny(setIdCurrent);
     }
