@@ -22,7 +22,7 @@ The active workout session screen. Rendered inside `homepage.tsx` when the user 
 4. **Completed Sets** — list of finished sets with duration and force
 5. **End Session** — disabled until at least one set is completed
 
-**Commented-out code:** There is a `// disabled={!ble.connectedDevice}` on the Start Recording button and a commented-out warning message. Uncomment these to require EVA connection before recording.
+**Recording guard:** `Start Recording` is disabled until `ble.connectedDevice` is set; `startRecording()` also shows an alert if called without a connection.
 
 ---
 

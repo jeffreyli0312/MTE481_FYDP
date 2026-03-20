@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { Alert, View, StyleSheet } from "react-native";
 import { Card, Text, Button, Badge, ProgressBar } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -120,6 +120,13 @@ export default function SessionView({
   const EMG_KEYS = ["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const;
 
   function startRecording() {
+    if (!ble.connectedDevice) {
+      Alert.alert(
+        "No device connected",
+        "Connect your EVA device before starting a set.",
+      );
+      return;
+    }
     const setId = `set_${Date.now()}`;
     currentSetIdRef.current = setId;
 
@@ -576,7 +583,9 @@ export default function SessionView({
                   marginTop: 6,
                 }}
               >
-                Tap to start
+                {ble.connectedDevice
+                  ? "Tap to start"
+                  : "Connect a device above to start recording."}
               </Text>
               <Button
                 mode="contained"
@@ -585,6 +594,7 @@ export default function SessionView({
                 style={styles.actionBtn}
                 buttonColor={colors.success}
                 textColor="#ffffff"
+                disabled={!ble.connectedDevice}
               >
                 Start Recording
               </Button>
