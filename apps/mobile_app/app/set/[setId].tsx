@@ -610,7 +610,6 @@ export default function SetAnalyticsScreen() {
     };
   }, [displayImuAxes, imuChartLabels]);
 
-  const emgTitle = `${selectedGroup.label} Muscle Activation (L / R) ${mvcValue > 0 ? "% MVC" : ""} Over Time`;
   const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} Bio-mechanical – Roll / Pitch / Yaw`;
 
   const channelValues = useMemo(() => {
@@ -906,9 +905,6 @@ export default function SetAnalyticsScreen() {
                   <Text variant="labelSmall" style={{ color: colors.onSurface }}>Right</Text>
                 </View>
               </View>
-              <Text variant="titleSmall" style={{ marginBottom: 4, color: colors.onSurface, fontWeight: "600" }}>
-                {emgTitle}
-              </Text>
               {emgZoom > 1 && (
                 <Pressable onPress={() => setEmgZoom(1)}>
                   <Text
