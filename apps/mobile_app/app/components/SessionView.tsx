@@ -16,14 +16,14 @@ import {
   endSet as dbEndSet,
   endSession as dbEndSession,
   insertSample,
-    parsePacket,
-    countSamplesForSet,
-    saveBaselineOffsets,
-    MVC_VALUES,
-    insertRep,
-    updateSetRepCount,
-    type EmgChannel,
-  } from "../sqlite/bleDb";
+  parsePacket,
+  countSamplesForSet,
+  saveBaselineOffsets,
+  getMvcValue,
+  insertRep,
+  updateSetRepCount,
+  type EmgChannel,
+} from "../sqlite/bleDb";
 import type { SessionRecord, SetRecord } from "../types/workout";
 
 interface SessionViewProps {
@@ -62,9 +62,9 @@ export default function SessionView({
   const baselineSamplesRef = useRef<{ emg_left_tricep: number[]; emg_left_pec: number[]; emg_right_tricep: number[]; emg_right_pec: number[] }>({ emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [] });
   const baselineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Use MVC_VALUES for per-rep EMG metrics (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing)
+  // Use getMvcValue – respects USE_HARDCODED_CALIBRATION flag in bleDb.ts
   const calibratedChannel: EmgChannel = "emg_left_pec";
-  const mvcValue = MVC_VALUES[calibratedChannel];
+  const mvcValue = getMvcValue(userId, exerciseName, calibratedChannel);
 
   // Pitch-based Schmitt trigger rep counter (uses left IMU)
   const PITCH_UPPER_THRESHOLD = 15; // degrees deviation from rest to start a rep

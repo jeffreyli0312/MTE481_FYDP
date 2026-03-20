@@ -201,8 +201,7 @@ export default function MvcCalibrationView({
   function finishPush() {
     ble.stopLogging();
     const rawPeak = rmsTrackerRef.current.peakRms;
-    // const mvc = Math.max(0, rawPeak - baselineRms);
-    const mvc = 3.0;
+    const mvc = Math.max(0, rawPeak - baselineRms);
     setPeakRmsValue(rawPeak);
     setMvcResult(mvc);
     setPhase("done");

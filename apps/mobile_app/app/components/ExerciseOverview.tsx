@@ -3,7 +3,8 @@ import { View, StyleSheet, Pressable } from "react-native";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
-import { MVC_VALUES } from "../sqlite/bleDb";
+import { useAuth } from "../context/AuthContext";
+import { getMvcValues } from "../sqlite/bleDb";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,11 @@ export default function ExerciseOverview({
   onStartNewSession,
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const [calibrationExpanded, setCalibrationExpanded] = useState(false);
+
+  const userId = user?.id ?? "local-user";
+  const mvcValues = getMvcValues(userId, exerciseName);
 
   const CHANNEL_LABELS: Record<string, string> = {
     emg_left_tricep: "Left Tricep",
@@ -76,7 +81,7 @@ export default function ExerciseOverview({
                 <View style={{ marginTop: 8, gap: 4 }}>
                   {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
                     <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
-                      {CHANNEL_LABELS[ch]}: {MVC_VALUES[ch].toFixed(4)}
+                      {CHANNEL_LABELS[ch]}: {mvcValues[ch].toFixed(4)}
                     </Text>
                   ))}
                 </View>

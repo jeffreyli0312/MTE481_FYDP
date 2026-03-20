@@ -27,7 +27,7 @@ import {
   listSamplesForSet,
   getBaselineOffsets,
   listRepsForSet,
-  MVC_VALUES,
+  getMvcValues,
   type RepRow,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
@@ -269,8 +269,10 @@ export default function SetAnalyticsScreen() {
         setErr(null);
         if (!setId) throw new Error("Missing setId");
 
-        // Use hardcoded MVC_VALUES (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing)
-        if (!cancelled) setMvcValue(MVC_VALUES.emg_left_pec);
+        const userId = user?.id ?? "local-user";
+        const exerciseName = (label as string) ?? "Bench Press";
+        const mvcValues = getMvcValues(userId, exerciseName);
+        if (!cancelled) setMvcValue(mvcValues.emg_left_pec);
 
         if (isSqlite) {
           initBleDb();
@@ -309,7 +311,7 @@ export default function SetAnalyticsScreen() {
               .filter((r) => Number.isFinite(r.time) && Number.isFinite(r[key]))
               .map((r) => {
                 const v = Number(r[key]);
-                const mvc = MVC_VALUES[key];
+                const mvc = mvcValues[key];
                 return { time: r.time, value: mvc > 0 ? (v / mvc) * 100 : v };
               })
               .sort((a, b) => a.time - b.time);

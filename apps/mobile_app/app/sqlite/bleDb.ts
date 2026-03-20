@@ -90,11 +90,13 @@ export type EmgChannel =
   | "emg_right_tricep"
   | "emg_right_pec";
 
-// ─── Hardcoded calibration (for % MVC conversion) ─────────────────────────────
-// For sensor testing: uncomment the next line to use small MVC values so low
-// raw EMG output is magnified in the % MVC display.
+// ─── Calibration (for % MVC conversion) ───────────────────────────────────────
+// USE_HARDCODED_CALIBRATION: when true, always use hardcoded MVC values.
+// When false, use calibrations from DB (from MvcCalibrationView); fallback to hardcoded if none.
+const USE_HARDCODED_CALIBRATION = true;
+
+// For sensor testing: use small MVC values so low raw EMG output is magnified.
 const USE_TEST_CALIBRATION = true;
-// const USE_TEST_CALIBRATION = false;
 
 /** Default MVC values per channel (normal use). */
 export const DEFAULT_MVC_VALUES: Record<EmgChannel, number> = {
@@ -112,10 +114,47 @@ const TEST_MVC_VALUES: Record<EmgChannel, number> = {
   emg_right_pec: 0.05,
 };
 
-/** Active calibration values – switch via USE_TEST_CALIBRATION above. */
-export const MVC_VALUES: Record<EmgChannel, number> = USE_TEST_CALIBRATION
+const HARDCODED_MVC: Record<EmgChannel, number> = USE_TEST_CALIBRATION
   ? TEST_MVC_VALUES
   : DEFAULT_MVC_VALUES;
+
+/** Active calibration values – used when USE_HARDCODED_CALIBRATION is true. */
+export const MVC_VALUES: Record<EmgChannel, number> = HARDCODED_MVC;
+
+/**
+ * Get MVC value for a channel. When USE_HARDCODED_CALIBRATION is true, returns
+ * hardcoded value. Otherwise returns DB calibration if present, else hardcoded fallback.
+ */
+export function getMvcValue(
+  userId: string,
+  exerciseName: string,
+  emgChannel: EmgChannel,
+): number {
+  if (USE_HARDCODED_CALIBRATION) {
+    return MVC_VALUES[emgChannel];
+  }
+  initBleDb();
+  const cal = getCalibration(userId, exerciseName, emgChannel);
+  return cal != null ? cal.mvc_value : MVC_VALUES[emgChannel];
+}
+
+/** Get MVC values for all channels for an exercise. */
+export function getMvcValues(
+  userId: string,
+  exerciseName: string,
+): Record<EmgChannel, number> {
+  const channels: EmgChannel[] = [
+    "emg_left_tricep",
+    "emg_left_pec",
+    "emg_right_tricep",
+    "emg_right_pec",
+  ];
+  const out: Record<EmgChannel, number> = {} as Record<EmgChannel, number>;
+  for (const ch of channels) {
+    out[ch] = getMvcValue(userId, exerciseName, ch);
+  }
+  return out;
+}
 
 export type CalibrationRow = {
   id: number;
