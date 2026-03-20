@@ -260,6 +260,8 @@ export function initBleDb() {
   migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_right_tricep REAL DEFAULT 0`);
   migrate(`ALTER TABLE sets ADD COLUMN baseline_emg_right_pec REAL DEFAULT 0`);
   migrate(`ALTER TABLE sets ADD COLUMN rep_count INTEGER DEFAULT 0`);
+  migrate(`ALTER TABLE reps ADD COLUMN wall_start_ms INTEGER`);
+  migrate(`ALTER TABLE reps ADD COLUMN wall_end_ms INTEGER`);
 }
 
 /* ------------------------ WRITE HELPERS ------------------------ */
@@ -351,6 +353,10 @@ export type RepRow = {
   end_ms: number | null;
   peak_emg: number | null;
   mean_emg: number | null;
+  /** Phone wall clock when rep window started (first sample). */
+  wall_start_ms: number | null;
+  /** Phone wall clock when rep was flushed to DB. */
+  wall_end_ms: number | null;
 };
 
 export function insertRep(args: {
@@ -360,12 +366,23 @@ export function insertRep(args: {
   endMs: number;
   peakEmg?: number;
   meanEmg?: number;
+  wallStartMs?: number;
+  wallEndMs?: number;
 }) {
   const db = getDb();
   db.runSync(
-    `INSERT INTO reps (set_id, rep_number, start_ms, end_ms, peak_emg, mean_emg)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [args.setId, args.repNumber, args.startMs, args.endMs, args.peakEmg ?? null, args.meanEmg ?? null]
+    `INSERT INTO reps (set_id, rep_number, start_ms, end_ms, peak_emg, mean_emg, wall_start_ms, wall_end_ms)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      args.setId,
+      args.repNumber,
+      args.startMs,
+      args.endMs,
+      args.peakEmg ?? null,
+      args.meanEmg ?? null,
+      args.wallStartMs ?? null,
+      args.wallEndMs ?? null,
+    ]
   );
 }
 

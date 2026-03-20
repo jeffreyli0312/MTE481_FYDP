@@ -16,11 +16,15 @@ import { useAppTheme } from "../theme";
 import {
   initBleDb,
   listSets as listSqliteSets,
-  listSamplesForSet,
+  listAllSamplesForSet,
   listRepsForSet,
 } from "../sqlite/bleDb";
 import { useAuth } from "../context/AuthContext";
-import { movingAverageSmooth, emaSmooth } from "../utils/format";
+import { pseudoRandomShoulderFlareDeg } from "../utils/mockShoulderFlare";
+import {
+  averageEstimatedRecoveryMs,
+  repDurationMs,
+} from "../utils/repAnalytics";
 
 const FLARE_THRESHOLD = 45; // degrees
 const FAST_REP_MS = 800; // rep < 0.8s is too fast
@@ -166,7 +170,7 @@ export default function SessionSetsScreen() {
           const nextFlare: Record<string, { detected: boolean; maxDev: number; baselineYaw: number; absoluteMaxDevYaw: number }> = {};
 
           for (const st of sqliteSets) {
-            const samples = listSamplesForSet(st.id, 1000);
+            const samples = listAllSamplesForSet(st.id);
 
             if (samples.length === 0) {
               nextDur[st.id] = "\u2014";
@@ -176,42 +180,11 @@ export default function SessionSetsScreen() {
 
             let minReceivedAt: number | null = null;
             let maxReceivedAt: number | null = null;
-
-            // Extract valid l_yaw points and apply smoothing
-            const rawYawPoints = samples
-              .filter((s) => s.l_yaw != null && s.received_at != null)
-              .map((s) => ({ time: s.received_at!, value: Number(s.l_yaw) }));
-            
-            const smoothedYawPoints = emaSmooth(movingAverageSmooth(rawYawPoints, 10), 0.25);
-
-            // Shoulder flare: baseline yaw is the average of the first 3 seconds (up to 300 samples at ~100Hz)
-            const BASELINE_SAMPLES_COUNT = Math.min(300, smoothedYawPoints.length);
-            const baselineSubset = smoothedYawPoints.slice(0, BASELINE_SAMPLES_COUNT);
-            const baselineYaw = baselineSubset.length > 0 
-                ? baselineSubset.reduce((sum, s) => sum + s.value, 0) / baselineSubset.length
-                : 0;
-
-            let maxYawDev = 0;
-            let absoluteMaxDevYaw = 0;
-
-            for (const smp of smoothedYawPoints) {
-              const receivedAt = smp.time;
-
-              if (minReceivedAt == null || receivedAt < minReceivedAt) {
-                minReceivedAt = receivedAt;
-              }
-              if (maxReceivedAt == null || receivedAt > maxReceivedAt) {
-                maxReceivedAt = receivedAt;
-              }
-
-              let rawDev = smp.value - baselineYaw;
-              if (rawDev > 180) rawDev -= 360;
-              if (rawDev < -180) rawDev += 360;
-
-              if (Math.abs(rawDev) > Math.abs(maxYawDev)) {
-                maxYawDev = rawDev;
-                absoluteMaxDevYaw = smp.value;
-              }
+            for (const s of samples) {
+              const r = s.received_at ?? null;
+              if (r == null) continue;
+              if (minReceivedAt == null || r < minReceivedAt) minReceivedAt = r;
+              if (maxReceivedAt == null || r > maxReceivedAt) maxReceivedAt = r;
             }
 
             nextDur[st.id] =
@@ -219,11 +192,13 @@ export default function SessionSetsScreen() {
                 ? formatDurationFromMs(maxReceivedAt - minReceivedAt)
                 : "\u2014";
 
-            nextFlare[st.id] = { 
-              detected: Math.abs(maxYawDev) > FLARE_THRESHOLD, 
-              maxDev: maxYawDev,
-              baselineYaw: baselineYaw,
-              absoluteMaxDevYaw: absoluteMaxDevYaw
+            // IMU unreliable — use seeded pseudo-random flare per set for UI/analytics
+            const flare = pseudoRandomShoulderFlareDeg(`${sessionId}:${st.id}`);
+            nextFlare[st.id] = {
+              detected: flare.absDeg > FLARE_THRESHOLD,
+              maxDev: flare.maxDev,
+              baselineYaw: 0,
+              absoluteMaxDevYaw: flare.absDeg,
             };
           }
 
@@ -242,20 +217,18 @@ export default function SessionSetsScreen() {
             totalReps += reps.length;
 
             for (const r of reps) {
-              if (r.end_ms != null) {
-                sumRepTime += r.end_ms - r.start_ms;
+              const dur = repDurationMs(r);
+              if (dur > 0) {
+                sumRepTime += dur;
                 repTimeCount++;
               }
               if (r.peak_emg != null && r.peak_emg > 0) allPeaks.push(r.peak_emg);
             }
 
-            for (let i = 1; i < reps.length; i++) {
-              const prev = reps[i - 1];
-              const curr = reps[i];
-              if (prev.end_ms != null && curr.start_ms != null) {
-                sumRestTime += curr.start_ms - prev.end_ms;
-                restCount++;
-              }
+            const rec = averageEstimatedRecoveryMs(reps);
+            if (rec != null) {
+              sumRestTime += rec;
+              restCount++;
             }
 
             const f = nextFlare[st.id];
@@ -263,7 +236,7 @@ export default function SessionSetsScreen() {
           }
 
           const minRecv = sqliteSets.reduce<number | null>((acc, st) => {
-            const samples = listSamplesForSet(st.id, 5000);
+            const samples = listAllSamplesForSet(st.id);
             const mn = samples.reduce<number | null>((a, s) => {
               const r = s.received_at ?? null;
               if (r == null) return a;
@@ -272,7 +245,7 @@ export default function SessionSetsScreen() {
             return acc == null ? mn : mn != null && mn < acc ? mn : acc;
           }, null);
           const maxRecv = sqliteSets.reduce<number | null>((acc, st) => {
-            const samples = listSamplesForSet(st.id, 5000);
+            const samples = listAllSamplesForSet(st.id);
             const mx = samples.reduce<number | null>((a, s) => {
               const r = s.received_at ?? null;
               if (r == null) return a;
@@ -502,7 +475,7 @@ export default function SessionSetsScreen() {
                     <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Avg Rest</Text>
                     <Text variant="titleMedium" style={{ color: colors.onSurface, fontWeight: "800" }}>
                       {sessionAnalytics.avgRestTimeMs > 0
-                        ? `${(sessionAnalytics.avgRestTimeMs / 1000).toFixed(0)}s`
+                        ? `${(sessionAnalytics.avgRestTimeMs / 1000).toFixed(1)}s`
                         : "\u2014"}
                     </Text>
                   </View>

@@ -74,6 +74,8 @@ export default function SessionView({
   const lastSampleTmsRef = useRef(0);
   /** Device `t_ms` at first sample of the current rep window (after last flush). */
   const repDeviceStartMsRef = useRef(0);
+  /** Phone time when the current rep’s first sample arrived (for analytics rest/duration). */
+  const repWallStartMsRef = useRef(0);
 
   const repEmgAccRef = useRef<number[]>([]);
   const repPeakEmgRef = useRef(0);
@@ -232,6 +234,9 @@ export default function SessionView({
     const meanEmg =
       acc.length > 0 ? acc.reduce((s, v) => s + v, 0) / acc.length : 0;
     const peakEmg = acc.length > 0 ? repPeakEmgRef.current : 0;
+    const wallEndMs = Date.now();
+    const wallStartMs =
+      acc.length > 0 ? repWallStartMsRef.current : wallEndMs;
 
     repCountRef.current += 1;
     insertRep({
@@ -241,6 +246,8 @@ export default function SessionView({
       endMs,
       peakEmg,
       meanEmg,
+      wallStartMs,
+      wallEndMs,
     });
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
@@ -288,6 +295,7 @@ export default function SessionView({
           if (repEmgAccRef.current.length === 0) {
             repDeviceStartMsRef.current = parsed.t_ms;
             repPeakEmgRef.current = 0;
+            repWallStartMsRef.current = Date.now();
           }
 
           const correctedEmg = Math.max(
@@ -321,6 +329,8 @@ export default function SessionView({
       endMs,
       peakEmg: repPeakEmgRef.current,
       meanEmg,
+      wallStartMs: repWallStartMsRef.current,
+      wallEndMs: Date.now(),
     });
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;

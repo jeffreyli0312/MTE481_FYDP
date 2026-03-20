@@ -24,12 +24,17 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
 import {
   initBleDb,
-  listSamplesForSet,
+  listAllSamplesForSet,
   getBaselineOffsets,
   listRepsForSet,
   getMvcValues,
   type RepRow,
 } from "../sqlite/bleDb";
+import {
+  averageRepDurationMs,
+  averageEstimatedRecoveryMs,
+} from "../utils/repAnalytics";
+import { pseudoRandomShoulderFlareDeg } from "../utils/mockShoulderFlare";
 import { useAuth } from "../context/AuthContext";
 import { movingAverageSmooth, emaSmooth } from "../utils/format";
 
@@ -278,7 +283,7 @@ export default function SetAnalyticsScreen() {
           initBleDb();
 
           const baseline = getBaselineOffsets(setId);
-          const sqliteRows = listSamplesForSet(setId, 5000);
+          const sqliteRows = listAllSamplesForSet(setId);
 
           const rows: SampleRow[] = sqliteRows.map((r: any) => ({
             time: Number(r.t_ms),
@@ -618,22 +623,15 @@ export default function SetAnalyticsScreen() {
 
   // --- Per-rep derived metrics ---
 
-  const avgRepTime = useMemo(() => {
-    const valid = reps.filter((r) => r.end_ms != null);
-    if (valid.length === 0) return 0;
-    const total = valid.reduce((s, r) => s + (r.end_ms! - r.start_ms), 0);
-    return total / valid.length;
-  }, [reps]);
+  const avgRepTime = useMemo(
+    () => averageRepDurationMs(reps),
+    [reps],
+  );
 
-  const avgRestTime = useMemo(() => {
-    const valid = reps.filter((r) => r.end_ms != null);
-    if (valid.length < 2) return 0;
-    let total = 0;
-    for (let i = 1; i < valid.length; i++) {
-      total += valid[i].start_ms - valid[i - 1].end_ms!;
-    }
-    return total / (valid.length - 1);
-  }, [reps]);
+  const avgRestMs = useMemo(
+    () => averageEstimatedRecoveryMs(reps),
+    [reps],
+  );
 
   const fatigueIndex = useMemo(() => {
     const valid = reps.filter((r) => r.peak_emg != null && r.peak_emg > 0);
@@ -644,6 +642,9 @@ export default function SetAnalyticsScreen() {
   }, [reps]);
 
   const maxFlare = useMemo(() => {
+    if (isSqlite && setId) {
+      return pseudoRandomShoulderFlareDeg(`${setId}:${selectedImuSide}`).absDeg;
+    }
     const yawKey: ImuAxisKey = selectedImuSide === "left" ? "l_yaw" : "r_yaw";
     const series = imuAxisSeries[yawKey];
     if (series.length === 0) return 0;
@@ -657,9 +658,9 @@ export default function SetAnalyticsScreen() {
       }
     }
     return Math.round(rawMax * 10) / 10;
-  }, [imuAxisSeries, selectedImuSide]);
+  }, [imuAxisSeries, selectedImuSide, isSqlite, setId]);
 
-  const FLARE_THRESHOLD = 15;
+  const FLARE_THRESHOLD = 45;
 
   const chartConfig = useMemo(
     () => ({
@@ -1038,7 +1039,9 @@ export default function SetAnalyticsScreen() {
           <StatCard
             title="Avg Rest Time"
             value={
-              avgRestTime > 0 ? `${(avgRestTime / 1000).toFixed(1)}s` : "--"
+              avgRestMs != null && avgRestMs > 0
+                ? `${(avgRestMs / 1000).toFixed(1)}s`
+                : "--"
             }
           />
           <StatCard
