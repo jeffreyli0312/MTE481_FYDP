@@ -22,6 +22,15 @@ const CHANNELS: { value: EmgChannel; label: string }[] = [
   { value: "emg_right_pec", label: "Right Pec" },
 ];
 
+const ALL_CHANNELS: EmgChannel[] = [
+  "emg_left_tricep",
+  "emg_left_pec",
+  "emg_right_tricep",
+  "emg_right_pec",
+];
+
+type ChannelMode = EmgChannel | "all";
+
 const BASELINE_DURATION_MS = 2000;
 const PUSH_DURATION_MS = 5000;
 const RMS_WINDOW_SIZE = 100; // 1 second at 100 Hz
@@ -86,23 +95,55 @@ export default function MvcCalibrationView({
   const ble = useBle();
   const userId = user?.id ?? "local-user";
 
-  const [channel, setChannel] = useState<EmgChannel>("emg_left_pec");
+  const [channelMode, setChannelMode] = useState<ChannelMode>("all");
   const [phase, setPhase] = useState<Phase>("select");
   const [countdown, setCountdown] = useState(3);
   const [progress, setProgress] = useState(0);
   const [baselineRms, setBaselineRms] = useState(0);
+  const [baselineRmsAll, setBaselineRmsAll] = useState<Record<EmgChannel, number>>({
+    emg_left_tricep: 0,
+    emg_left_pec: 0,
+    emg_right_tricep: 0,
+    emg_right_pec: 0,
+  });
   const [currentRms, setCurrentRms] = useState(0);
   const [peakRmsValue, setPeakRmsValue] = useState(0);
   const [mvcResult, setMvcResult] = useState(0);
+  const [mvcResultAll, setMvcResultAll] = useState<Record<EmgChannel, number>>({
+    emg_left_tricep: 0,
+    emg_left_pec: 0,
+    emg_right_tricep: 0,
+    emg_right_pec: 0,
+  });
 
   const startTimeRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Baseline: collect all samples to compute RMS noise floor
-  const baselineSamplesRef = useRef<number[]>([]);
+  const isAllMode = channelMode === "all";
 
-  // Push: sliding 1-second RMS window tracker
-  const rmsTrackerRef = useRef(new RmsWindowTracker(RMS_WINDOW_SIZE));
+  // Baseline: collect samples per channel
+  const baselineSamplesRef = useRef<Record<EmgChannel, number[]>>({
+    emg_left_tricep: [],
+    emg_left_pec: [],
+    emg_right_tricep: [],
+    emg_right_pec: [],
+  });
+
+  // Store baseline RMS per channel (used in finishPush – state may not be updated yet)
+  const baselineRmsRef = useRef<Record<EmgChannel, number>>({
+    emg_left_tricep: 0,
+    emg_left_pec: 0,
+    emg_right_tricep: 0,
+    emg_right_pec: 0,
+  });
+
+  // Push: one RMS tracker per channel
+  const rmsTrackersRef = useRef<Record<EmgChannel, RmsWindowTracker>>({
+    emg_left_tricep: new RmsWindowTracker(RMS_WINDOW_SIZE),
+    emg_left_pec: new RmsWindowTracker(RMS_WINDOW_SIZE),
+    emg_right_tricep: new RmsWindowTracker(RMS_WINDOW_SIZE),
+    emg_right_pec: new RmsWindowTracker(RMS_WINDOW_SIZE),
+  });
 
   useEffect(() => {
     return () => {
@@ -113,7 +154,9 @@ export default function MvcCalibrationView({
 
   // ── Phase 1: Baseline (2s, stay still) ──────────────────────────
   function startBaseline() {
-    baselineSamplesRef.current = [];
+    for (const ch of ALL_CHANNELS) {
+      baselineSamplesRef.current[ch] = [];
+    }
     startTimeRef.current = Date.now();
     setPhase("baseline");
     setProgress(0);
@@ -122,7 +165,9 @@ export default function MvcCalibrationView({
       for (const bytes of batch) {
         const parsed = parsePacket(bytes);
         if (!parsed) continue;
-        baselineSamplesRef.current.push(parsed[channel]);
+        for (const ch of ALL_CHANNELS) {
+          baselineSamplesRef.current[ch].push(parsed[ch]);
+        }
       }
     });
 
@@ -141,13 +186,22 @@ export default function MvcCalibrationView({
 
   function finishBaseline() {
     ble.stopLogging();
-    const samples = baselineSamplesRef.current;
-    let rms = 0;
-    if (samples.length > 0) {
-      const sumSq = samples.reduce((s, v) => s + v * v, 0);
-      rms = Math.sqrt(sumSq / samples.length);
+    const baselines: Record<EmgChannel, number> = {
+      emg_left_tricep: 0,
+      emg_left_pec: 0,
+      emg_right_tricep: 0,
+      emg_right_pec: 0,
+    };
+    for (const ch of ALL_CHANNELS) {
+      const samples = baselineSamplesRef.current[ch];
+      if (samples.length > 0) {
+        const sumSq = samples.reduce((s, v) => s + v * v, 0);
+        baselines[ch] = Math.sqrt(sumSq / samples.length);
+      }
     }
-    setBaselineRms(rms);
+    baselineRmsRef.current = baselines;
+    setBaselineRmsAll(baselines);
+    setBaselineRms(isAllMode ? baselines.emg_left_pec : baselines[channelMode as EmgChannel]);
     startCountdown();
   }
 
@@ -169,7 +223,9 @@ export default function MvcCalibrationView({
 
   // ── Phase 3: Push (5s, max contraction) ─────────────────────────
   function startPush() {
-    rmsTrackerRef.current.reset();
+    for (const ch of ALL_CHANNELS) {
+      rmsTrackersRef.current[ch].reset();
+    }
     startTimeRef.current = Date.now();
     setPhase("push");
     setProgress(0);
@@ -179,9 +235,14 @@ export default function MvcCalibrationView({
       for (const bytes of batch) {
         const parsed = parsePacket(bytes);
         if (!parsed) continue;
-        const rms = rmsTrackerRef.current.push(parsed[channel]);
-        setCurrentRms(rms);
-        setPeakRmsValue(rmsTrackerRef.current.peakRms);
+        let maxRms = 0;
+        for (const ch of ALL_CHANNELS) {
+          const rms = rmsTrackersRef.current[ch].push(parsed[ch]);
+          if (rms > maxRms) maxRms = rms;
+        }
+        setCurrentRms(maxRms);
+        const maxPeak = Math.max(...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms));
+        setPeakRmsValue(maxPeak);
       }
     });
 
@@ -200,15 +261,30 @@ export default function MvcCalibrationView({
 
   function finishPush() {
     ble.stopLogging();
-    const rawPeak = rmsTrackerRef.current.peakRms;
-    const mvc = Math.max(0, rawPeak - baselineRms);
-    setPeakRmsValue(rawPeak);
-    setMvcResult(mvc);
-    setPhase("done");
-
-    if (mvc > 0) {
-      saveCalibration(userId, exerciseName, channel, mvc);
+    const baselines = baselineRmsRef.current;
+    const results: Record<EmgChannel, number> = {
+      emg_left_tricep: 0,
+      emg_left_pec: 0,
+      emg_right_tricep: 0,
+      emg_right_pec: 0,
+    };
+    for (const ch of ALL_CHANNELS) {
+      const rawPeak = rmsTrackersRef.current[ch].peakRms;
+      results[ch] = Math.max(0, rawPeak - baselines[ch]);
+      if (results[ch] > 0) {
+        saveCalibration(userId, exerciseName, ch, results[ch]);
+      }
     }
+    setMvcResultAll(results);
+    setPeakRmsValue(
+      Math.max(...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms)),
+    );
+    if (isAllMode) {
+      setMvcResult(results.emg_left_pec);
+    } else {
+      setMvcResult(results[channelMode as EmgChannel]);
+    }
+    setPhase("done");
   }
 
   // ── Helpers ─────────────────────────────────────────────────────
@@ -216,12 +292,26 @@ export default function MvcCalibrationView({
     setPhase("select");
     setProgress(0);
     setBaselineRms(0);
+    setBaselineRmsAll({
+      emg_left_tricep: 0,
+      emg_left_pec: 0,
+      emg_right_tricep: 0,
+      emg_right_pec: 0,
+    });
     setCurrentRms(0);
     setPeakRmsValue(0);
     setMvcResult(0);
+    setMvcResultAll({
+      emg_left_tricep: 0,
+      emg_left_pec: 0,
+      emg_right_tricep: 0,
+      emg_right_pec: 0,
+    });
   }
 
-  const channelLabel = CHANNELS.find((c) => c.value === channel)?.label ?? channel;
+  const channelLabel = isAllMode
+    ? "All channels"
+    : CHANNELS.find((c) => c.value === channelMode)?.label ?? channelMode;
 
   // ── Render ──────────────────────────────────────────────────────
   if (!ble.connectedDevice) {
@@ -258,12 +348,18 @@ export default function MvcCalibrationView({
           <Card style={styles.card} mode="outlined">
             <Card.Content>
               <Text variant="titleSmall" style={{ color: colors.onSurface, marginBottom: 8 }}>
-                Select EMG Channel
+                Select calibration mode
               </Text>
               <RadioButton.Group
-                value={channel}
-                onValueChange={(v) => setChannel(v as EmgChannel)}
+                value={channelMode}
+                onValueChange={(v) => setChannelMode(v as ChannelMode)}
               >
+                <RadioButton.Item
+                  key="all"
+                  label="All channels (recommended – calibrate all 4 at once)"
+                  value="all"
+                  labelStyle={{ color: colors.onSurface }}
+                />
                 {CHANNELS.map((ch) => (
                   <RadioButton.Item
                     key={ch.value}
@@ -312,7 +408,7 @@ export default function MvcCalibrationView({
               </Text>
             </View>
             <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 12 }}>
-              Recording baseline noise for {channelLabel.toLowerCase()}...
+              Recording baseline noise{isAllMode ? " for all channels" : ` for ${channelLabel.toLowerCase()}`}...
             </Text>
             <ProgressBar
               progress={progress}
@@ -328,7 +424,9 @@ export default function MvcCalibrationView({
         <Card style={styles.card} mode="outlined">
           <Card.Content style={{ alignItems: "center", paddingVertical: 32 }}>
             <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}>
-              Baseline captured ({baselineRms.toFixed(4)})
+              {isAllMode
+                ? "Baseline captured for all channels"
+                : `Baseline captured (${baselineRms.toFixed(4)})`}
             </Text>
             <Text variant="bodyLarge" style={{ color: colors.onSurfaceVariant, marginBottom: 8, fontWeight: "700" }}>
               Get ready to push...
@@ -340,7 +438,9 @@ export default function MvcCalibrationView({
               {countdown}
             </Text>
             <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 8 }}>
-              Contract your {channelLabel.toLowerCase()} as hard as you can
+              {isAllMode
+                ? "Contract all target muscles as hard as you can"
+                : `Contract your ${channelLabel.toLowerCase()} as hard as you can`}
             </Text>
           </Card.Content>
         </Card>
@@ -364,7 +464,7 @@ export default function MvcCalibrationView({
             />
 
             <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}>
-              Channel: {channelLabel}
+              Mode: {channelLabel}
             </Text>
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
               <View>
@@ -405,38 +505,63 @@ export default function MvcCalibrationView({
               </Text>
 
               <View style={{ width: "100%", marginTop: 16, gap: 8 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
-                    Baseline RMS (noise)
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
-                    {baselineRms.toFixed(4)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
-                    Peak 1s RMS (raw)
-                  </Text>
-                  <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
-                    {peakRmsValue.toFixed(4)}
-                  </Text>
-                </View>
-                <View style={{ height: 1, backgroundColor: colors.outline, marginVertical: 4 }} />
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
-                    MVC (peak − baseline)
-                  </Text>
-                  <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
-                    {mvcResult.toFixed(4)}
-                  </Text>
-                </View>
-              </View>
+                {isAllMode ? (
+                  ALL_CHANNELS.map((ch) => {
+                    const label = CHANNELS.find((c) => c.value === ch)?.label ?? ch;
+                    const mvc = mvcResultAll[ch];
+                    const baseline = baselineRmsAll[ch];
+                    return (
+                      <View key={ch} style={styles.doneRow}>
+                        <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                          {label}
+                        </Text>
+                        <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                          MVC: {mvc.toFixed(4)} (baseline: {baseline.toFixed(4)})
+                        </Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                        Baseline RMS (noise)
+                      </Text>
+                      <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                        {baselineRms.toFixed(4)}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                        Peak 1s RMS (raw)
+                      </Text>
+                      <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                        {peakRmsValue.toFixed(4)}
+                      </Text>
+                    </View>
+                    <View style={{ height: 1, backgroundColor: colors.outline, marginVertical: 4 }} />
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                        MVC (peak − baseline)
+                      </Text>
+                      <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                        {mvcResult.toFixed(4)}
+                      </Text>
+                    </View>
+                  </>
+                )}
 
-              {mvcResult === 0 && (
-                <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
-                  No usable signal detected. Make sure the device is sending data.
-                </Text>
-              )}
+                {!isAllMode && mvcResult === 0 && (
+                  <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
+                    No usable signal detected. Make sure the device is sending data.
+                  </Text>
+                )}
+                {isAllMode && Object.values(mvcResultAll).every((v) => v === 0) && (
+                  <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
+                    No usable signal detected. Make sure the device is sending data.
+                  </Text>
+                )}
+              </View>
             </Card.Content>
           </Card>
 
@@ -467,4 +592,10 @@ export default function MvcCalibrationView({
 const styles = StyleSheet.create({
   card: { borderRadius: 16, marginBottom: 16 },
   actionBtn: { borderRadius: 10, marginTop: 4 },
+  doneRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
 });
