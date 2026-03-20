@@ -13,9 +13,14 @@ export default function TabsLayout() {
         headerShown: false,
         headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.onSurface,
-        tabBarStyle: { backgroundColor: colors.surface },
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.outline,
+          borderTopWidth: 1,
+        },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.onSurfaceVariant,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: "500" },
       }}
     >
       <Tabs.Screen

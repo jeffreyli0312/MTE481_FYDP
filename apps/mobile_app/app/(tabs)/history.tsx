@@ -35,7 +35,7 @@ export default function HistoryScreen() {
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "bold", paddingBottom: 12, paddingHorizontal: 20 }}>
+      <Text variant="headlineSmall" style={{ color: colors.onSurface, paddingBottom: 16, paddingHorizontal: 20, letterSpacing: -0.3 }}>
         History
       </Text>
 

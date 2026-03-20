@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  mvcCard: { borderRadius: 16, marginTop: 16 },
+  mvcCard: { borderRadius: 14, marginTop: 16, overflow: "hidden" },
   primaryBtn: { marginTop: 16, borderRadius: 10 },
   seedBtn: { marginTop: 10, borderRadius: 10, borderStyle: "dashed" },
   emptyCard: { marginTop: 20, borderRadius: 14 },

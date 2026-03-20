@@ -1,34 +1,53 @@
 import {
   MD3DarkTheme,
   MD3LightTheme,
+  configureFonts,
   useTheme as usePaperTheme,
 } from "react-native-paper";
 
-const accent = "#BC9EEE";
-const accentLight = "#d4c4ec";
-const accentMuted = "#9a7bc4";
+// Professional tech palette – refined indigo/slate
+const accent = "#6366f1";
+const accentLight = "#818cf8";
+const accentMuted = "#4f46e5";
+
+const interFontConfig = {
+  fontFamily: "Inter_400Regular",
+  // Override title/label variants for clearer hierarchy
+  titleSmall: { fontFamily: "Inter_500Medium" },
+  titleMedium: { fontFamily: "Inter_500Medium" },
+  titleLarge: { fontFamily: "Inter_500Medium" },
+  labelSmall: { fontFamily: "Inter_500Medium" },
+  labelMedium: { fontFamily: "Inter_500Medium" },
+  labelLarge: { fontFamily: "Inter_500Medium" },
+  headlineSmall: { fontFamily: "Inter_600SemiBold" },
+  headlineMedium: { fontFamily: "Inter_600SemiBold" },
+  headlineLarge: { fontFamily: "Inter_600SemiBold" },
+  displaySmall: { fontFamily: "Inter_600SemiBold" },
+  displayMedium: { fontFamily: "Inter_600SemiBold" },
+  displayLarge: { fontFamily: "Inter_600SemiBold" },
+};
 
 const lightColors = {
   ...MD3LightTheme.colors,
   primary: accent,
   onPrimary: "#ffffff",
-  primaryContainer: "#f3ecfc",
-  onPrimaryContainer: "#4a3a5c",
+  primaryContainer: "#eef2ff",
+  onPrimaryContainer: "#312e81",
   secondary: accentMuted,
   onSecondary: "#ffffff",
-  background: "#f8f6fc",
-  onBackground: "#1a1a1a",
+  background: "#f8fafc",
+  onBackground: "#0f172a",
   surface: "#ffffff",
-  onSurface: "#1a1a1a",
-  surfaceVariant: "#f5f0fa",
-  onSurfaceVariant: "#4a4a4a",
-  outline: "#d4c8e0",
-  outlineVariant: "#e2d8ec",
+  onSurface: "#0f172a",
+  surfaceVariant: "#f1f5f9",
+  onSurfaceVariant: "#475569",
+  outline: "#e2e8f0",
+  outlineVariant: "#cbd5e1",
   error: "#d32f2f",
   onError: "#ffffff",
   elevation: {
     ...MD3LightTheme.colors.elevation,
-    level0: "#f8f6fc",
+    level0: "#f8fafc",
     level1: "#ffffff",
     level2: "#ffffff",
     level3: "#ffffff",
@@ -39,9 +58,9 @@ const lightColors = {
   success: "#2e7d32",
   danger: "#c62828",
   info: accent,
-  infoBg: "#f3ecfc",
-  infoBorder: "#d4c4ec",
-  infoText: "#4a3a5c",
+  infoBg: "#eef2ff",
+  infoBorder: "#c7d2fe",
+  infoText: "#312e81",
   muted: "#5a5a5a",
   warning: "#ed6c02",
   warningBg: "#fff3e0",
@@ -53,24 +72,24 @@ const darkColors = {
   ...MD3DarkTheme.colors,
   primary: accent,
   onPrimary: "#ffffff",
-  primaryContainer: "#3d2d4f",
-  onPrimaryContainer: "#e2d4f0",
+  primaryContainer: "#312e81",
+  onPrimaryContainer: "#c7d2fe",
   secondary: accentLight,
   onSecondary: "#1a1a1a",
-  background: "#12101a",
-  onBackground: "#ffffff",
-  surface: "#1c1a24",
-  onSurface: "#ffffff",
-  surfaceVariant: "#252330",
-  onSurfaceVariant: "#c8c4d0",
-  outline: "#3d3848",
-  outlineVariant: "#4a4558",
+  background: "#0f172a",
+  onBackground: "#f8fafc",
+  surface: "#1e293b",
+  onSurface: "#f8fafc",
+  surfaceVariant: "#334155",
+  onSurfaceVariant: "#cbd5e1",
+  outline: "#475569",
+  outlineVariant: "#64748b",
   error: "#ef5350",
   onError: "#ffffff",
   elevation: {
     ...MD3DarkTheme.colors.elevation,
-    level0: "#12101a",
-    level1: "#1c1a24",
+    level0: "#0f172a",
+    level1: "#1e293b",
     level2: "#22202c",
     level3: "#282634",
     level4: "#2e2c3c",
@@ -80,9 +99,9 @@ const darkColors = {
   success: "#66bb6a",
   danger: "#ef5350",
   info: accentLight,
-  infoBg: "#1f1528",
-  infoBorder: "#3d2d4f",
-  infoText: "#e2d4f0",
+  infoBg: "#1e1b4b",
+  infoBorder: "#4338ca",
+  infoText: "#c7d2fe",
   muted: "#b0aab8",
   warning: "#ffb74d",
   warningBg: "#2d2419",
@@ -95,11 +114,15 @@ export type AppThemeColors = typeof lightColors;
 export const LightTheme = {
   ...MD3LightTheme,
   colors: lightColors,
+  fonts: configureFonts({ config: interFontConfig }),
+  roundness: 12,
 };
 
 export const DarkTheme = {
   ...MD3DarkTheme,
   colors: darkColors,
+  fonts: configureFonts({ config: interFontConfig }),
+  roundness: 12,
 };
 
 export type AppTheme = typeof LightTheme;

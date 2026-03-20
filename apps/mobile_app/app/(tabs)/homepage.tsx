@@ -55,7 +55,7 @@ export default function HomePageScreen() {
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <StatusBar barStyle={dark ? "light-content" : "dark-content"} />
 
-      <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "bold", paddingBottom: 12, paddingHorizontal: 20 }}>
+      <Text variant="headlineSmall" style={{ color: colors.onSurface, paddingBottom: 16, paddingHorizontal: 20, letterSpacing: -0.3 }}>
         Home
       </Text>
 
@@ -91,7 +91,7 @@ export default function HomePageScreen() {
         </Card>
 
         {/* Exercises */}
-        <Text variant="titleMedium" style={{ color: colors.onSurface, marginBottom: 12, marginTop: 8 }}>
+        <Text variant="titleMedium" style={{ color: colors.onSurface, marginBottom: 14, marginTop: 12, opacity: 0.9 }}>
           Available Exercises
         </Text>
 
@@ -158,13 +158,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   welcomeCard: {
-    borderRadius: 16,
+    borderRadius: 14,
     marginBottom: 24,
+    overflow: "hidden",
   },
   welcomeContent: {
     flexDirection: "row",
@@ -179,8 +180,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   exerciseCard: {
-    borderRadius: 16,
+    borderRadius: 14,
     marginBottom: 12,
+    overflow: "hidden",
   },
   exerciseContent: {
     flexDirection: "row",
@@ -193,8 +195,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statsCard: {
-    borderRadius: 16,
+    borderRadius: 14,
     marginTop: 8,
+    overflow: "hidden",
   },
   statsRow: {
     flexDirection: "row",
