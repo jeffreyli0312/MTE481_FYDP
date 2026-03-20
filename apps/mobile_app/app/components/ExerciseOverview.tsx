@@ -51,7 +51,7 @@ export default function ExerciseOverview({
       {/* Hardcoded calibration (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing) */}
       <Card style={styles.mvcCard} mode="outlined">
         <Pressable onPress={() => setCalibrationExpanded((v) => !v)}>
-          <Card.Content>
+          <Card.Content style={styles.mvcContent}>
             <View style={styles.topRow}>
               <Text
                 variant="titleSmall"
@@ -111,6 +111,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   mvcCard: { borderRadius: 14, marginTop: 16, overflow: "hidden" },
+  mvcContent: { paddingVertical: 10, paddingHorizontal: 14 },
   primaryBtn: { marginTop: 16, borderRadius: 10 },
   seedBtn: { marginTop: 10, borderRadius: 10, borderStyle: "dashed" },
   emptyCard: { marginTop: 20, borderRadius: 14 },

@@ -94,7 +94,13 @@ export default function HistoryScreen() {
                 key={s.id}
                 dateLabel={formatDateFromMs(s.startedAtMs)}
                 durationLabel={formatDurationFromMs(s.durationMs)}
-                title={s.label ?? `Session ${local.sessions.length - idx}`}
+                title={
+                  s.label
+                    ? selectedExercise
+                      ? `${s.label} #${idx + 1}`
+                      : s.label
+                    : `Session ${local.sessions.length - idx}`
+                }
                 subtitle={`${s.setCount} ${s.setCount === 1 ? "Set" : "Sets"} · ${s.sampleCount} samples`}
                 onPress={() =>
                   router.push({
