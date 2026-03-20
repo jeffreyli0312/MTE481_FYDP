@@ -5,9 +5,10 @@ import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useAppTheme } from "../theme";
 import ExerciseOverview from "../components/ExerciseOverview";
 import SessionView from "../components/SessionView";
+import MvcCalibrationView from "../components/MvcCalibrationView";
 import type { SessionRecord } from "../types/workout";
 
-type ExerciseMode = "overview" | "session";
+type ExerciseMode = "overview" | "session" | "calibration";
 
 export default function ExerciseScreen() {
   const { colors, dark } = useAppTheme();
@@ -38,11 +39,18 @@ export default function ExerciseScreen() {
               onBack={() => setMode("overview")}
               onEndSession={handleEndSession}
             />
+          ) : mode === "calibration" ? (
+            <MvcCalibrationView
+              exerciseName={name}
+              onBack={() => setMode("overview")}
+              onComplete={() => setMode("overview")}
+            />
           ) : (
             <ExerciseOverview
               exerciseName={name}
               onBack={() => router.back()}
               onStartNewSession={() => setMode("session")}
+              onStartCalibration={() => setMode("calibration")}
             />
           )}
         </ScrollView>

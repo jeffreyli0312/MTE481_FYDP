@@ -12,6 +12,7 @@ interface ExerciseOverviewProps {
   exerciseName: string;
   onBack: () => void;
   onStartNewSession: () => void;
+  onStartCalibration?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ export default function ExerciseOverview({
   exerciseName,
   onBack,
   onStartNewSession,
+  onStartCalibration,
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
   const { user } = useAuth();
@@ -53,11 +55,14 @@ export default function ExerciseOverview({
         {exerciseName}
       </Text>
 
-      {/* Hardcoded calibration (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing) */}
+      {/* EMG Calibration */}
       <Card style={styles.mvcCard} mode="outlined">
-        <Pressable onPress={() => setCalibrationExpanded((v) => !v)}>
-          <Card.Content style={styles.mvcContent}>
-            <View style={styles.topRow}>
+        <Card.Content style={styles.mvcContent}>
+          <View style={styles.topRow}>
+            <Pressable
+              onPress={() => setCalibrationExpanded((v) => !v)}
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <Text
                 variant="titleSmall"
                 style={{ color: colors.onSurface, fontWeight: "900" }}
@@ -69,26 +74,38 @@ export default function ExerciseOverview({
                 size={18}
                 color={colors.onSurfaceVariant}
               />
-            </View>
-            {calibrationExpanded && (
-              <>
-                <Text
-                  variant="bodySmall"
-                  style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
-                >
-                  Per-channel MVC values:
-                </Text>
-                <View style={{ marginTop: 8, gap: 4 }}>
-                  {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
-                    <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
-                      {CHANNEL_LABELS[ch]}: {mvcValues[ch].toFixed(4)}
-                    </Text>
-                  ))}
-                </View>
-              </>
+            </Pressable>
+            {onStartCalibration && (
+              <Button
+                mode="contained"
+                onPress={onStartCalibration}
+                icon="tune"
+                compact
+                buttonColor={colors.primary}
+                textColor={colors.onPrimary}
+              >
+                Calibrate
+              </Button>
             )}
-          </Card.Content>
-        </Pressable>
+          </View>
+          {calibrationExpanded && (
+            <>
+              <Text
+                variant="bodySmall"
+                style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+              >
+                Per-channel MVC values:
+              </Text>
+              <View style={{ marginTop: 8, gap: 4 }}>
+                {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
+                  <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
+                    {CHANNEL_LABELS[ch]}: {mvcValues[ch].toFixed(4)}
+                  </Text>
+                ))}
+              </View>
+            </>
+          )}
+        </Card.Content>
       </Card>
 
       {/* Start session */}
