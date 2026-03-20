@@ -361,14 +361,14 @@ export default function SessionView({
                   variant="titleMedium"
                   style={{ color: colors.primary, fontWeight: "900" }}
                 >
-                  Stay completely still...
+                  Stay still...
                 </Text>
               </View>
               <Text
                 variant="bodySmall"
                 style={{ color: colors.onSurfaceVariant, textAlign: "center", marginBottom: 12 }}
               >
-                Capturing noise floor for 2 seconds
+                Calibrating (2s)
               </Text>
               <ProgressBar
                 progress={baselineProgress}
@@ -395,18 +395,6 @@ export default function SessionView({
               >
                 {formatMMSS(setSeconds)}
               </Text>
-              <Text
-                variant="labelLarge"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  textAlign: "center",
-                  marginTop: 2,
-                  marginBottom: 12,
-                }}
-              >
-                Set Duration
-              </Text>
-
               <View style={{ alignItems: "center", marginTop: 12 }}>
                 <Text
                   variant="displayMedium"
@@ -426,7 +414,7 @@ export default function SessionView({
                 variant="labelSmall"
                 style={{ color: colors.onSurfaceVariant, textAlign: "center", marginTop: 8 }}
               >
-                {sampleCount} samples saved to DB
+                {sampleCount} samples
               </Text>
 
               <Button
@@ -450,17 +438,17 @@ export default function SessionView({
                   fontWeight: "900",
                 }}
               >
-                Ready to start your next set?
+                Ready to record?
               </Text>
               <Text
-                variant="bodyMedium"
+                variant="bodySmall"
                 style={{
                   color: colors.onSurfaceVariant,
                   textAlign: "center",
                   marginTop: 6,
                 }}
               >
-                Press the button below to begin recording
+                Tap to start
               </Text>
               <Button
                 mode="contained"
@@ -502,7 +490,7 @@ export default function SessionView({
               variant="bodySmall"
               style={{ color: colors.infoText, textAlign: "center" }}
             >
-              No sets completed yet. Start recording to begin!
+              No sets yet. Start recording.
             </Text>
           </Card.Content>
         </Card>

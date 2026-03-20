@@ -11,28 +11,12 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 import { useAppTheme } from "../theme";
-import type { Exercise, SessionRecord } from "../types/workout";
+import type { Exercise } from "../types/workout";
 import { AVAILABLE_EXERCISES } from "../constants/exercises";
 
 export default function HomePageScreen() {
   const { user, signOut } = useAuth();
   const { colors, dark } = useAppTheme();
-
-  const username = user?.email?.split("@")[0] || "User";
-
-  const [sessionsByExercise, setSessionsByExercise] = useState<
-    Record<string, SessionRecord[]>
-  >({});
-
-  const { totalSessions, totalSets } = useMemo(() => {
-    const allSessions = Object.values(sessionsByExercise).flat();
-    return {
-      totalSessions: allSessions.length,
-      totalSets: allSessions.reduce((sum, s) => sum + (s.setsCount ?? 0), 0),
-    };
-  }, [sessionsByExercise]);
-
-
 
   async function handleLogout() {
     try {
@@ -117,33 +101,6 @@ export default function HomePageScreen() {
             </Card.Content>
           </Card>
         ))}
-
-        {/* Stats Card */}
-        <Card style={styles.statsCard} mode="outlined">
-          <Card.Content>
-            <Text variant="titleMedium" style={{ color: colors.onSurface, marginBottom: 16 }}>
-              Your Stats
-            </Text>
-            <View style={styles.statsRow}>
-              <View style={{ alignItems: "center" }}>
-                <Text variant="displaySmall" style={{ color: colors.primary }}>
-                  {totalSessions}
-                </Text>
-                <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant }}>
-                  Total Sessions
-                </Text>
-              </View>
-              <View style={{ alignItems: "center" }}>
-                <Text variant="displaySmall" style={{ color: colors.primary }}>
-                  {totalSets}
-                </Text>
-                <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant }}>
-                  Total Sets
-                </Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -193,14 +150,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-  },
-  statsCard: {
-    borderRadius: 14,
-    marginTop: 8,
-    overflow: "hidden",
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
   },
 });

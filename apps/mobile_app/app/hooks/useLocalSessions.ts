@@ -93,7 +93,7 @@ export function useLocalSessions(_userId?: string | undefined, exerciseName?: st
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [exerciseName]);
 
   useEffect(() => {
     load();

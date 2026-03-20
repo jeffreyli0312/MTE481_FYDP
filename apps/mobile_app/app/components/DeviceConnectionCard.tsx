@@ -18,46 +18,46 @@ export default function DeviceConnectionCard({ ble }: DeviceConnectionCardProps)
   const { colors } = useAppTheme();
 
   return (
-    <Card style={styles.card} mode="outlined">
-      <Card.Content>
-        <View style={styles.headerRow}>
-          <Text
-            variant="titleMedium"
-            style={{ color: colors.onSurface, fontWeight: "900" }}
-          >
-            Device Connection
-          </Text>
-          <View
-            style={[
-              styles.dot,
-              {
-                backgroundColor: ble.connectedDevice
-                  ? colors.success
-                  : colors.error,
-              },
-            ]}
-          />
-        </View>
-
+    <Card style={[styles.card, ble.connectedDevice && styles.cardCompact]} mode="outlined">
+      <Card.Content style={ble.connectedDevice ? styles.contentCompact : undefined}>
         {ble.connectedDevice ? (
           <View style={styles.connectedRow}>
-            <View style={styles.inlineRow}>
-              <Feather name="bluetooth" size={16} color={colors.success} />
-              <Text variant="bodyMedium" style={{ color: colors.success }}>
-                {ble.connectedDevice.name || ble.connectedDevice.id}
-              </Text>
-            </View>
+            <View
+              style={[
+                styles.dot,
+                { backgroundColor: colors.success },
+              ]}
+            />
+            <Feather name="bluetooth" size={14} color={colors.success} />
+            <Text variant="bodySmall" style={{ color: colors.onSurface, flex: 1 }}>
+              {ble.connectedDevice.name || ble.connectedDevice.id}
+            </Text>
             <Button
               mode="text"
               onPress={ble.disconnect}
               compact
               textColor={colors.error}
+              style={styles.disconnectBtn}
             >
               Disconnect
             </Button>
           </View>
         ) : (
           <>
+            <View style={styles.headerRow}>
+              <Text
+                variant="titleMedium"
+                style={{ color: colors.onSurface, fontWeight: "900" }}
+              >
+                Device Connection
+              </Text>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: colors.error },
+                ]}
+              />
+            </View>
             <Card
               style={[styles.warningCard, { borderColor: colors.warningBorder }]}
               mode="outlined"
@@ -69,7 +69,7 @@ export default function DeviceConnectionCard({ ble }: DeviceConnectionCardProps)
                   variant="bodySmall"
                   style={{ color: colors.warningText, textAlign: "center" }}
                 >
-                  Connect to an EVA device to enable sensor data recording.
+                  Connect a device to record sensor data.
                 </Text>
               </Card.Content>
             </Card>
@@ -93,7 +93,7 @@ export default function DeviceConnectionCard({ ble }: DeviceConnectionCardProps)
                   variant="labelLarge"
                   style={{ color: colors.onSurfaceVariant, marginBottom: 8 }}
                 >
-                  Found Devices ({ble.devices.length})
+                  Devices ({ble.devices.length})
                 </Text>
                 {ble.devices.map((item) => {
                   const isConnecting = ble.connectingId === item.id;
@@ -162,7 +162,7 @@ export default function DeviceConnectionCard({ ble }: DeviceConnectionCardProps)
                   fontStyle: "italic",
                 }}
               >
-                Tap scan to discover nearby EVA devices
+                Tap scan to find devices
               </Text>
             )}
           </>
@@ -177,6 +177,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 18,
   },
+  cardCompact: {
+    marginBottom: 12,
+  },
+  contentCompact: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -184,14 +191,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   connectedRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: 8,
+  },
+  disconnectBtn: {
+    marginVertical: -8,
+    marginRight: -8,
   },
   inlineRow: {
     flexDirection: "row",

@@ -73,6 +73,13 @@ type ImuAxisKey =
   | "r_yaw";
 type ImuSide = "left" | "right";
 
+// Consistent, high-contrast colors for both Muscle Activation and Bio-mechanical charts
+const CHART_COLORS = {
+  left: "#2563eb",
+  right: "#ea580c",
+  yaw: "#15803d",
+};
+
 const IMU_AXES: {
   axis: string;
   leftKey: ImuAxisKey;
@@ -85,21 +92,21 @@ const IMU_AXES: {
     leftKey: "l_roll",
     rightKey: "r_roll",
     label: "Roll",
-    color: "rgba(59,130,246,1)",
+    color: CHART_COLORS.left,
   },
   {
     axis: "pitch",
     leftKey: "l_pitch",
     rightKey: "r_pitch",
     label: "Pitch",
-    color: "rgba(249,115,22,1)",
+    color: CHART_COLORS.right,
   },
   {
     axis: "yaw",
     leftKey: "l_yaw",
     rightKey: "r_yaw",
     label: "Yaw",
-    color: "rgba(34,197,94,1)",
+    color: CHART_COLORS.yaw,
   },
 ];
 
@@ -249,8 +256,8 @@ export default function SetAnalyticsScreen() {
   const [mvcValue, setMvcValue] = useState(0);
 
   const metricOptions: { key: MetricKey; label: string }[] = [
-    { key: "force", label: "EMG" },
-    { key: "imu", label: "IMU" },
+    { key: "force", label: "Muscle Activation" },
+    { key: "imu", label: "Bio-mechanical" },
   ];
 
   useEffect(() => {
@@ -470,13 +477,13 @@ export default function SetAnalyticsScreen() {
       datasets: [
         {
           data: leftProcessed.slice(0, minLen).map((p) => p.value),
-          color: () => "rgba(59,130,246,1)",
-          strokeWidth: 2,
+          color: () => CHART_COLORS.left,
+          strokeWidth: 3,
         },
         {
           data: rightProcessed.slice(0, minLen).map((p) => p.value),
-          color: () => "rgba(249,115,22,1)",
-          strokeWidth: 2,
+          color: () => CHART_COLORS.right,
+          strokeWidth: 3,
         },
       ],
     };
@@ -581,8 +588,8 @@ export default function SetAnalyticsScreen() {
     };
   }, [displayImuAxes, imuChartLabels]);
 
-  const emgTitle = `${selectedGroup.label} EMG (L / R) ${mvcValue > 0 ? "% MVC" : ""} Over Time`;
-  const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} IMU – Roll / Pitch / Yaw`;
+  const emgTitle = `${selectedGroup.label} Muscle Activation (L / R) ${mvcValue > 0 ? "% MVC" : ""} Over Time`;
+  const imuTitle = `${selectedImuSide === "left" ? "Left" : "Right"} Bio-mechanical – Roll / Pitch / Yaw`;
 
   const channelValues = useMemo(() => {
     const all = [
@@ -827,8 +834,8 @@ export default function SetAnalyticsScreen() {
             <Card.Content style={styles.segmentContent}>
               {(
                 [
-                  ["left", "Left IMU"],
-                  ["right", "Right IMU"],
+                  ["left", "Left Bio-mechanical"],
+                  ["right", "Right Bio-mechanical"],
                 ] as const
               ).map(([side, lbl]) => {
                 const active = selectedImuSide === side;
@@ -856,11 +863,11 @@ export default function SetAnalyticsScreen() {
             <Card.Content>
               <View style={styles.imuLegend}>
                 <View style={styles.imuLegendItem}>
-                  <View style={[styles.imuLegendDot, { backgroundColor: "rgba(59,130,246,1)" }]} />
+                  <View style={[styles.imuLegendDot, { backgroundColor: CHART_COLORS.left }]} />
                   <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Left</Text>
                 </View>
                 <View style={styles.imuLegendItem}>
-                  <View style={[styles.imuLegendDot, { backgroundColor: "rgba(249,115,22,1)" }]} />
+                  <View style={[styles.imuLegendDot, { backgroundColor: CHART_COLORS.right }]} />
                   <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Right</Text>
                 </View>
               </View>
@@ -1030,12 +1037,12 @@ export default function SetAnalyticsScreen() {
             }
           />
           <StatCard
-            title="Avg EMG"
+            title="Avg Muscle Activation"
             value={avgEmg.toFixed(1)}
             unit={mvcValue > 0 ? "%" : ""}
           />
           <StatCard
-            title="Peak EMG"
+            title="Peak Muscle Activation"
             value={maxEmg.toFixed(1)}
             unit={mvcValue > 0 ? "%" : ""}
           />
