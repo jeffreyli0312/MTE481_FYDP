@@ -795,7 +795,8 @@ export default function SetAnalyticsScreen() {
                   compact
                   style={{ flex: 1 }}
                   buttonColor={active ? colors.primary : undefined}
-                  textColor={active ? "#fff" : colors.onSurface}
+                  textColor={active ? colors.onPrimary : colors.onSurface}
+                  labelStyle={{ fontWeight: "600" }}
                 >
                   {opt.label}
                 </Button>
@@ -808,7 +809,7 @@ export default function SetAnalyticsScreen() {
         {metric === "force" && (
           <Card style={styles.segment} mode="outlined">
             <Card.Content style={styles.segmentContent}>
-              {EMG_GROUPS.map((g) => {
+                {EMG_GROUPS.map((g) => {
                 const active = selectedEmgGroup === g.key;
                 return (
                   <Button
@@ -818,7 +819,8 @@ export default function SetAnalyticsScreen() {
                     compact
                     style={{ flex: 1 }}
                     buttonColor={active ? colors.primary : undefined}
-                    textColor={active ? "#fff" : colors.onSurface}
+                    textColor={active ? colors.onPrimary : colors.onSurface}
+                    labelStyle={{ fontWeight: "600" }}
                   >
                     {g.label}
                   </Button>
@@ -847,7 +849,8 @@ export default function SetAnalyticsScreen() {
                     compact
                     style={{ flex: 1 }}
                     buttonColor={active ? colors.primary : undefined}
-                    textColor={active ? "#fff" : colors.onSurface}
+                    textColor={active ? colors.onPrimary : colors.onSurface}
+                    labelStyle={{ fontWeight: "600" }}
                   >
                     {lbl}
                   </Button>
@@ -864,14 +867,14 @@ export default function SetAnalyticsScreen() {
               <View style={styles.imuLegend}>
                 <View style={styles.imuLegendItem}>
                   <View style={[styles.imuLegendDot, { backgroundColor: CHART_COLORS.left }]} />
-                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Left</Text>
+                  <Text variant="labelSmall" style={{ color: colors.onSurface }}>Left</Text>
                 </View>
                 <View style={styles.imuLegendItem}>
                   <View style={[styles.imuLegendDot, { backgroundColor: CHART_COLORS.right }]} />
-                  <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>Right</Text>
+                  <Text variant="labelSmall" style={{ color: colors.onSurface }}>Right</Text>
                 </View>
               </View>
-              <Text variant="titleSmall" style={{ marginBottom: 4 }}>
+              <Text variant="titleSmall" style={{ marginBottom: 4, color: colors.onSurface, fontWeight: "600" }}>
                 {emgTitle}
               </Text>
               {emgZoom > 1 && (
@@ -944,7 +947,7 @@ export default function SetAnalyticsScreen() {
         {metric === "imu" && imuDatasets && (
           <Card style={styles.chartCard} mode="outlined">
             <Card.Content>
-              <Text variant="titleSmall" style={{ marginBottom: 4 }}>
+              <Text variant="titleSmall" style={{ marginBottom: 4, color: colors.onSurface, fontWeight: "600" }}>
                 {imuTitle}
               </Text>
 
@@ -959,7 +962,7 @@ export default function SetAnalyticsScreen() {
                     />
                     <Text
                       variant="labelSmall"
-                      style={{ color: colors.onSurfaceVariant }}
+                      style={{ color: colors.onSurface }}
                     >
                       {a.label}
                     </Text>
@@ -1085,7 +1088,7 @@ function StatCard({
   return (
     <Card style={styles.statCard} mode="outlined">
       <Card.Content>
-        <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+        <Text variant="labelMedium" style={{ color: colors.onSurface, fontWeight: "600" }}>
           {title}
         </Text>
         <Text
@@ -1100,7 +1103,7 @@ function StatCard({
           {unit ? (
             <Text
               variant="labelSmall"
-              style={{ color: colors.onSurfaceVariant }}
+              style={{ color: colors.onSurface }}
             >
               {" "}
               {unit}

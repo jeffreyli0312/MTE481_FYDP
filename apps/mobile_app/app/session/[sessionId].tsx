@@ -9,7 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Card, Text, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../theme";
 
@@ -581,9 +581,7 @@ export default function SessionSetsScreen() {
                 <Card.Content>
                   <View style={styles.topRow}>
                     <View style={styles.inlineRow}>
-                      <Text style={{ color: colors.onSurfaceVariant }}>
-                        {"\uD83D\uDCC5"}
-                      </Text>
+                      <Feather name="calendar" size={14} color={colors.onSurfaceVariant} />
                       <Text
                         variant="labelMedium"
                         style={{ color: colors.onSurfaceVariant }}
@@ -593,9 +591,7 @@ export default function SessionSetsScreen() {
                     </View>
 
                     <View style={styles.inlineRow}>
-                      <Text style={{ color: colors.onSurfaceVariant }}>
-                        {"\uD83D\uDD52"}
-                      </Text>
+                      <Feather name="clock" size={14} color={colors.onSurfaceVariant} />
                       <Text
                         variant="labelMedium"
                         style={{ color: colors.onSurfaceVariant }}

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Card, Text, Button } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
@@ -21,6 +21,7 @@ export default function ExerciseOverview({
   onStartNewSession,
 }: ExerciseOverviewProps) {
   const { colors } = useAppTheme();
+  const [calibrationExpanded, setCalibrationExpanded] = useState(false);
 
   const CHANNEL_LABELS: Record<string, string> = {
     emg_left_tricep: "Left Tricep",
@@ -49,30 +50,40 @@ export default function ExerciseOverview({
 
       {/* Hardcoded calibration (see bleDb.ts – uncomment USE_TEST_CALIBRATION for sensor testing) */}
       <Card style={styles.mvcCard} mode="outlined">
-        <Card.Content>
-          <View style={styles.topRow}>
-            <Text
-              variant="titleSmall"
-              style={{ color: colors.onSurface, fontWeight: "900" }}
-            >
-              EMG Calibration
-            </Text>
-            <Feather name="zap" size={16} color={colors.primary} />
-          </View>
-          <Text
-            variant="bodySmall"
-            style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
-          >
-            Per-channel MVC values:
-          </Text>
-          <View style={{ marginTop: 8, gap: 4 }}>
-            {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
-              <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
-                {CHANNEL_LABELS[ch]}: {MVC_VALUES[ch].toFixed(4)}
+        <Pressable onPress={() => setCalibrationExpanded((v) => !v)}>
+          <Card.Content>
+            <View style={styles.topRow}>
+              <Text
+                variant="titleSmall"
+                style={{ color: colors.onSurface, fontWeight: "900" }}
+              >
+                EMG Calibration
               </Text>
-            ))}
-          </View>
-        </Card.Content>
+              <Feather
+                name={calibrationExpanded ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={colors.onSurfaceVariant}
+              />
+            </View>
+            {calibrationExpanded && (
+              <>
+                <Text
+                  variant="bodySmall"
+                  style={{ color: colors.onSurfaceVariant, marginTop: 6 }}
+                >
+                  Per-channel MVC values:
+                </Text>
+                <View style={{ marginTop: 8, gap: 4 }}>
+                  {(["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const).map((ch) => (
+                    <Text key={ch} variant="labelMedium" style={{ color: colors.onSurface }}>
+                      {CHANNEL_LABELS[ch]}: {MVC_VALUES[ch].toFixed(4)}
+                    </Text>
+                  ))}
+                </View>
+              </>
+            )}
+          </Card.Content>
+        </Pressable>
       </Card>
 
       {/* Start session */}
