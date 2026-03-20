@@ -1,13 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
-import { Card, Text, Button, Badge } from "react-native-paper";
+import { Card, Text, Button, Badge, ProgressBar } from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import { useBle } from "../hooks/useBle";
 import { formatMMSS, MovingAverage } from "../utils/format";
-import { ProgressBar } from "react-native-paper";
 import BackButton from "./BackButton";
 import DeviceConnectionCard from "./DeviceConnectionCard";
 import {
@@ -51,8 +50,10 @@ export default function SessionView({
   const [sessionTimerRunning, setSessionTimerRunning] = useState(true);
 
   const [isRecording, setIsRecording] = useState(false);
-  const [isBaseline, setIsBaseline] = useState(false);
-  const [baselineProgress, setBaselineProgress] = useState(0);
+  /** Pre-recording warmup: EMG still (1) then bench setup / IMU lock (2). */
+  const [isWarmup, setIsWarmup] = useState(false);
+  const [warmupPhase, setWarmupPhase] = useState<1 | 2>(1);
+  const [warmupProgress, setWarmupProgress] = useState(0);
   const [setSeconds, setSetSeconds] = useState(0);
   const [setTimerRunning, setSetTimerRunning] = useState(false);
   const [completedSets, setCompletedSets] = useState<SetRecord[]>([]);
@@ -73,8 +74,10 @@ export default function SessionView({
   const repCountRef = useRef(0);
   const schmittStateRef = useRef<"low" | "high">("low");
   const pitchMaRef = useRef(new MovingAverage(10));
+  /** Left IMU pitch (deg) used as “arms locked out” / rest reference for rep Schmitt trigger. */
   const restingPitchRef = useRef(0);
-  const pitchBaselineSamplesRef = useRef<number[]>([]);
+  /** Pitch samples during phase 2 (get into bench) — resting pitch taken from end of this window. */
+  const setupPitchSamplesRef = useRef<number[]>([]);
 
   // Per-rep tracking
   const repStartMsRef = useRef(0);
@@ -96,7 +99,9 @@ export default function SessionView({
 
   async function handleBack() {
     setIsRecording(false);
-    setIsBaseline(false);
+    setIsWarmup(false);
+    setWarmupPhase(1);
+    setWarmupProgress(0);
     setSetTimerRunning(false);
     setSessionTimerRunning(false);
     if (baselineTimerRef.current) clearInterval(baselineTimerRef.current);
@@ -108,8 +113,18 @@ export default function SessionView({
     onBack();
   }
 
-  const BASELINE_DURATION_MS = 2000;
+  const EMG_STILL_MS = 3000;
+  const BENCH_SETUP_MS = 3000;
   const EMG_KEYS = ["emg_left_tricep", "emg_left_pec", "emg_right_tricep", "emg_right_pec"] as const;
+
+  /** Use mean pitch from the last fraction of setup samples so “rest” matches settled bench position. */
+  function computeRestingPitchFromSetupSamples(samples: number[]): number {
+    if (samples.length === 0) return 0;
+    const start = Math.max(0, Math.floor(samples.length * 0.65));
+    const tail = samples.slice(start);
+    const use = tail.length >= 3 ? tail : samples;
+    return use.reduce((s, v) => s + v, 0) / use.length;
+  }
 
   function startRecording() {
     const setId = `set_${Date.now()}`;
@@ -137,7 +152,7 @@ export default function SessionView({
     schmittStateRef.current = "low";
     pitchMaRef.current.reset();
     restingPitchRef.current = 0;
-    pitchBaselineSamplesRef.current = [];
+    setupPitchSamplesRef.current = [];
     repStartMsRef.current = 0;
     repEmgAccRef.current = [];
     repPeakEmgRef.current = 0;
@@ -150,9 +165,17 @@ export default function SessionView({
       emgOffsetRef.current[k] = 0;
       baselineSamplesRef.current[k] = [];
     }
-    setBaselineProgress(0);
-    setIsBaseline(true);
+    setWarmupProgress(0);
+    setWarmupPhase(1);
+    setIsWarmup(true);
 
+    startWarmupPhase1EmgStill();
+  }
+
+  /** Phase 1: stay still — EMG baseline only (no IMU rest lock yet). */
+  function startWarmupPhase1EmgStill() {
+    setWarmupPhase(1);
+    setWarmupProgress(0);
     const startTime = Date.now();
 
     ble.startLogging((batch) => {
@@ -162,26 +185,24 @@ export default function SessionView({
         for (const k of EMG_KEYS) {
           baselineSamplesRef.current[k].push(parsed[k]);
         }
-        pitchBaselineSamplesRef.current.push(parsed.l_pitch);
       }
     });
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
-      setBaselineProgress(Math.min(elapsed / BASELINE_DURATION_MS, 1));
-
-      if (elapsed >= BASELINE_DURATION_MS) {
+      setWarmupProgress(Math.min(elapsed / EMG_STILL_MS, 1));
+      if (elapsed >= EMG_STILL_MS) {
         clearInterval(interval);
-        finishBaselineAndRecord();
+        baselineTimerRef.current = null;
+        finishWarmupPhase1AndStartPhase2();
       }
     }, 100);
     baselineTimerRef.current = interval;
   }
 
-  function finishBaselineAndRecord() {
+  function finishWarmupPhase1AndStartPhase2() {
     ble.stopLogging();
 
-    // Compute mean offset per channel
     for (const k of EMG_KEYS) {
       const arr = baselineSamplesRef.current[k];
       emgOffsetRef.current[k] = arr.length > 0
@@ -189,18 +210,46 @@ export default function SessionView({
         : 0;
     }
 
-    // Persist offsets so analytics pages can apply them
     if (currentSetIdRef.current) {
       saveBaselineOffsets(currentSetIdRef.current, emgOffsetRef.current);
     }
 
-    // Compute resting pitch from baseline samples
-    const pitchArr = pitchBaselineSamplesRef.current;
-    restingPitchRef.current = pitchArr.length > 0
-      ? pitchArr.reduce((s, v) => s + v, 0) / pitchArr.length
-      : 0;
+    setupPitchSamplesRef.current = [];
+    setWarmupPhase(2);
+    setWarmupProgress(0);
 
-    setIsBaseline(false);
+    const startTime = Date.now();
+    ble.startLogging((batch) => {
+      for (const bytes of batch) {
+        const parsed = parsePacket(bytes);
+        if (!parsed) continue;
+        setupPitchSamplesRef.current.push(parsed.l_pitch);
+      }
+    });
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      setWarmupProgress(Math.min(elapsed / BENCH_SETUP_MS, 1));
+      if (elapsed >= BENCH_SETUP_MS) {
+        clearInterval(interval);
+        baselineTimerRef.current = null;
+        finishWarmupPhase2AndStartRecording();
+      }
+    }, 100);
+    baselineTimerRef.current = interval;
+  }
+
+  /** Phase 2 done: lock IMU rest pitch, then continuous recording + rep counting. */
+  function finishWarmupPhase2AndStartRecording() {
+    ble.stopLogging();
+
+    restingPitchRef.current = computeRestingPitchFromSetupSamples(
+      setupPitchSamplesRef.current,
+    );
+    pitchMaRef.current.reset();
+    schmittStateRef.current = "low";
+
+    setIsWarmup(false);
     setIsRecording(true);
     setSetTimerRunning(true);
 
@@ -348,30 +397,79 @@ export default function SessionView({
       {/* Recording / Baseline / Ready card */}
       <Card style={styles.bigCard} mode="outlined">
         <Card.Content>
-          {isBaseline ? (
+          {isWarmup ? (
             <>
               <View style={{ alignItems: "center", marginBottom: 12 }}>
                 <Badge style={{ backgroundColor: colors.primary }}>
-                  Baseline
+                  {warmupPhase === 1 ? "Step 1 of 3" : "Step 2 of 3"}
                 </Badge>
               </View>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}>
-                <Feather name="mic-off" size={18} color={colors.primary} />
-                <Text
-                  variant="titleMedium"
-                  style={{ color: colors.primary, fontWeight: "900" }}
-                >
-                  Stay still...
-                </Text>
-              </View>
-              <Text
-                variant="bodySmall"
-                style={{ color: colors.onSurfaceVariant, textAlign: "center", marginBottom: 12 }}
-              >
-                Calibrating (2s)
-              </Text>
+              {warmupPhase === 1 ? (
+                <>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Feather name="mic-off" size={18} color={colors.primary} />
+                    <Text
+                      variant="titleMedium"
+                      style={{ color: colors.primary, fontWeight: "900" }}
+                    >
+                      Don&apos;t move
+                    </Text>
+                  </View>
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: colors.onSurfaceVariant,
+                      textAlign: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    Stay still for 3 seconds while we measure your EMG baseline (muscle noise
+                    floor).
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Feather name="target" size={18} color={colors.primary} />
+                    <Text
+                      variant="titleMedium"
+                      style={{ color: colors.primary, fontWeight: "900" }}
+                    >
+                      Get into position
+                    </Text>
+                  </View>
+                  <Text
+                    variant="bodySmall"
+                    style={{
+                      color: colors.onSurfaceVariant,
+                      textAlign: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    You have 3 seconds to get into your start position for {exerciseName}{" "}
+                    (e.g. arms extended at the top for bench). When this bar finishes we lock
+                    your IMU angle for rep counting.
+                  </Text>
+                </>
+              )}
               <ProgressBar
-                progress={baselineProgress}
+                progress={warmupProgress}
                 color={colors.primary}
                 style={{ height: 8, borderRadius: 4 }}
               />
@@ -380,7 +478,7 @@ export default function SessionView({
             <>
               <View style={{ alignItems: "center", marginBottom: 6 }}>
                 <Badge style={{ backgroundColor: colors.danger }}>
-                  Recording
+                  Step 3 — Recording
                 </Badge>
               </View>
 
