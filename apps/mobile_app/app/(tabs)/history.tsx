@@ -58,24 +58,35 @@ export default function HistoryScreen() {
             <Chip
               selected={selectedExercise === null}
               onPress={() => setSelectedExercise(null)}
-              style={styles.chip}
-              showSelectedOverlay
-              selectedColor={colors.primary}
+              style={[
+                styles.chip,
+                selectedExercise === null && { backgroundColor: colors.primary },
+              ]}
+              showSelectedOverlay={false}
+              showSelectedCheck={false}
+              textStyle={selectedExercise === null ? { color: "#fff" } : undefined}
             >
               All
             </Chip>
-            {AVAILABLE_EXERCISES.map((ex) => (
-              <Chip
-                key={ex.id}
-                selected={selectedExercise === ex.name}
-                onPress={() => setSelectedExercise(ex.name)}
-                style={styles.chip}
-                showSelectedOverlay
-                selectedColor={colors.primary}
-              >
-                {ex.name}
-              </Chip>
-            ))}
+            {AVAILABLE_EXERCISES.map((ex) => {
+              const isSelected = selectedExercise === ex.name;
+              return (
+                <Chip
+                  key={ex.id}
+                  selected={isSelected}
+                  onPress={() => setSelectedExercise(ex.name)}
+                  style={[
+                    styles.chip,
+                    isSelected && { backgroundColor: colors.primary },
+                  ]}
+                  showSelectedOverlay={false}
+                  showSelectedCheck={false}
+                  textStyle={isSelected ? { color: "#fff" } : undefined}
+                >
+                  {ex.name}
+                </Chip>
+              );
+            })}
           </ScrollView>
         </View>
 
