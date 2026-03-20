@@ -62,7 +62,7 @@ export default function SessionView({
   const baselineSamplesRef = useRef<{ emg_left_tricep: number[]; emg_left_pec: number[]; emg_right_tricep: number[]; emg_right_pec: number[] }>({ emg_left_tricep: [], emg_left_pec: [], emg_right_tricep: [], emg_right_pec: [] });
   const baselineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Use getMvcValue – respects USE_HARDCODED_CALIBRATION flag in bleDb.ts
+  // MVC from SQLite calibrations only (see getMvcValue in bleDb).
   const calibratedChannel: EmgChannel = "emg_left_pec";
   const mvcValue = getMvcValue(userId, exerciseName, calibratedChannel);
 

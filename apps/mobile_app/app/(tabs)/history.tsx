@@ -108,11 +108,11 @@ export default function HistoryScreen() {
                 dateLabel={formatDateFromMs(s.startedAtMs)}
                 durationLabel={formatDurationFromMs(s.durationMs)}
                 title={
-                  s.label
-                    ? selectedExercise
-                      ? `${s.label} #${idx + 1}`
-                      : s.label
-                    : `Session ${local.sessions.length - idx}`
+                  s.label && s.exerciseOrdinal != null
+                    ? `${s.label} #${s.exerciseOrdinal}`
+                    : s.label
+                      ? s.label
+                      : `Session ${local.sessions.length - idx}`
                 }
                 subtitle={`${s.setCount} ${s.setCount === 1 ? "Set" : "Sets"} · ${s.sampleCount} samples`}
                 onPress={() =>

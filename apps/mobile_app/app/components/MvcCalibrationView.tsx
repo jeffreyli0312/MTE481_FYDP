@@ -39,7 +39,8 @@ type ChannelMode = EmgChannel | "all";
 
 const BASELINE_DURATION_MS = 2000;
 const PUSH_DURATION_MS = 5000;
-const RMS_WINDOW_SIZE = 100; // 1 second at 100 Hz
+// BLE batches every 1s – sample rate may be ~10–50/sec. Use smaller window so we fill and get peak.
+const RMS_WINDOW_SIZE = 25;
 
 type Phase = "select" | "baseline" | "countdown" | "push" | "done";
 
@@ -64,7 +65,7 @@ class RmsWindowTracker {
   push(value: number): number {
     const sq = value * value;
     if (this.count >= this.windowSize) {
-      this.sumSq -= this.buf[this.idx];
+      this.sumSq = Math.max(0, this.sumSq - this.buf[this.idx]);
     }
     this.buf[this.idx] = sq;
     this.sumSq += sq;
@@ -204,13 +205,15 @@ export default function MvcCalibrationView({
       const samples = baselineSamplesRef.current[ch];
       if (samples.length > 0) {
         const sumSq = samples.reduce((s, v) => s + v * v, 0);
-        baselines[ch] = Math.sqrt(sumSq / samples.length);
+        baselines[ch] = Math.sqrt(Math.max(0, sumSq / samples.length));
       }
     }
     baselineRmsRef.current = baselines;
     setBaselineRmsAll(baselines);
+    const avgBaseline =
+      ALL_CHANNELS.reduce((sum, ch) => sum + baselines[ch], 0) / ALL_CHANNELS.length;
     setBaselineRms(
-      isAllMode ? baselines.emg_left_pec : baselines[channelMode as EmgChannel],
+      isAllMode ? avgBaseline : baselines[channelMode as EmgChannel],
     );
     startCountdown();
   }
@@ -245,16 +248,24 @@ export default function MvcCalibrationView({
       for (const bytes of batch) {
         const parsed = parsePacket(bytes);
         if (!parsed) continue;
-        let maxRms = 0;
-        for (const ch of ALL_CHANNELS) {
-          const rms = rmsTrackersRef.current[ch].push(parsed[ch]);
-          if (rms > maxRms) maxRms = rms;
+        if (isAllMode) {
+          let maxRms = 0;
+          for (const ch of ALL_CHANNELS) {
+            const rms = rmsTrackersRef.current[ch].push(parsed[ch]);
+            if (rms > maxRms) maxRms = rms;
+          }
+          setCurrentRms(maxRms);
+          setPeakRmsValue(
+            Math.max(
+              ...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms),
+            ),
+          );
+        } else {
+          const sel = channelMode as EmgChannel;
+          const rms = rmsTrackersRef.current[sel].push(parsed[sel]);
+          setCurrentRms(rms);
+          setPeakRmsValue(rmsTrackersRef.current[sel].peakRms);
         }
-        setCurrentRms(maxRms);
-        const maxPeak = Math.max(
-          ...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms),
-        );
-        setPeakRmsValue(maxPeak);
       }
     });
 
@@ -280,11 +291,22 @@ export default function MvcCalibrationView({
       emg_right_tricep: 0,
       emg_right_pec: 0,
     };
-    for (const ch of ALL_CHANNELS) {
-      const rawPeak = rmsTrackersRef.current[ch].peakRms;
-      results[ch] = Math.max(0, rawPeak - baselines[ch]);
-      if (results[ch] > 0) {
-        saveCalibration(userId, exerciseName, ch, results[ch]);
+    if (isAllMode) {
+      for (const ch of ALL_CHANNELS) {
+        const rawPeak = rmsTrackersRef.current[ch].peakRms;
+        const base = baselines[ch] ?? 0;
+        results[ch] = Math.max(0, rawPeak - base);
+        if (results[ch] > 0) {
+          saveCalibration(userId, exerciseName, ch, results[ch]);
+        }
+      }
+    } else {
+      const sel = channelMode as EmgChannel;
+      const rawPeak = rmsTrackersRef.current[sel].peakRms;
+      const base = baselines[sel] ?? 0;
+      results[sel] = Math.max(0, rawPeak - base);
+      if (results[sel] > 0) {
+        saveCalibration(userId, exerciseName, sel, results[sel]);
       }
     }
     setMvcResultAll(results);
@@ -292,7 +314,7 @@ export default function MvcCalibrationView({
       Math.max(...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms)),
     );
     if (isAllMode) {
-      setMvcResult(results.emg_left_pec);
+      setMvcResult(Math.max(...ALL_CHANNELS.map((ch) => results[ch])));
     } else {
       setMvcResult(results[channelMode as EmgChannel]);
     }

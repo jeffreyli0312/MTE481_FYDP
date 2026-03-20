@@ -91,51 +91,20 @@ export type EmgChannel =
   | "emg_right_pec";
 
 // ─── Calibration (for % MVC conversion) ───────────────────────────────────────
-// USE_HARDCODED_CALIBRATION: when true, always use hardcoded MVC values (ignores DB).
-// When false, use calibrations from DB (from MvcCalibrationView); fallback to hardcoded if none.
-const USE_HARDCODED_CALIBRATION = false;
-
-// For sensor testing: use small MVC values so low raw EMG output is magnified.
-const USE_TEST_CALIBRATION = true;
-
-/** Default MVC values per channel (normal use). */
-export const DEFAULT_MVC_VALUES: Record<EmgChannel, number> = {
-  emg_left_tricep: 0.5,
-  emg_left_pec: 0.5,
-  emg_right_tricep: 0.5,
-  emg_right_pec: 0.5,
-};
-
-/** Small values for sensor testing – use when raw EMG output is low. */
-const TEST_MVC_VALUES: Record<EmgChannel, number> = {
-  emg_left_tricep: 0.05,
-  emg_left_pec: 0.05,
-  emg_right_tricep: 0.05,
-  emg_right_pec: 0.05,
-};
-
-const HARDCODED_MVC: Record<EmgChannel, number> = USE_TEST_CALIBRATION
-  ? TEST_MVC_VALUES
-  : DEFAULT_MVC_VALUES;
-
-/** Active calibration values – used when USE_HARDCODED_CALIBRATION is true. */
-export const MVC_VALUES: Record<EmgChannel, number> = HARDCODED_MVC;
+// Values come only from DB (MvcCalibrationView → saveCalibration). No hardcoded fallbacks.
 
 /**
- * Get MVC value for a channel. When USE_HARDCODED_CALIBRATION is true, returns
- * hardcoded value. Otherwise returns DB calibration if present, else hardcoded fallback.
+ * Get MVC value for a channel from saved calibration only.
+ * Returns 0 if the user has not calibrated this channel yet (raw EMG / no % MVC scaling).
  */
 export function getMvcValue(
   userId: string,
   exerciseName: string,
   emgChannel: EmgChannel,
 ): number {
-  if (USE_HARDCODED_CALIBRATION) {
-    return MVC_VALUES[emgChannel];
-  }
   initBleDb();
   const cal = getCalibration(userId, exerciseName, emgChannel);
-  return cal != null ? cal.mvc_value : MVC_VALUES[emgChannel];
+  return cal != null ? cal.mvc_value : 0;
 }
 
 /** Get MVC values for all channels for an exercise. */
