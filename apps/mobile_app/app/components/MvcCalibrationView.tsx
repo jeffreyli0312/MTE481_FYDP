@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
-import { Card, Text, Button, ProgressBar, RadioButton } from "react-native-paper";
+import {
+  Card,
+  Text,
+  Button,
+  ProgressBar,
+  RadioButton,
+} from "react-native-paper";
 import { Feather } from "@expo/vector-icons";
 import { useAppTheme } from "../theme";
 import { useAuth } from "../context/AuthContext";
@@ -100,7 +106,9 @@ export default function MvcCalibrationView({
   const [countdown, setCountdown] = useState(3);
   const [progress, setProgress] = useState(0);
   const [baselineRms, setBaselineRms] = useState(0);
-  const [baselineRmsAll, setBaselineRmsAll] = useState<Record<EmgChannel, number>>({
+  const [baselineRmsAll, setBaselineRmsAll] = useState<
+    Record<EmgChannel, number>
+  >({
     emg_left_tricep: 0,
     emg_left_pec: 0,
     emg_right_tricep: 0,
@@ -201,7 +209,9 @@ export default function MvcCalibrationView({
     }
     baselineRmsRef.current = baselines;
     setBaselineRmsAll(baselines);
-    setBaselineRms(isAllMode ? baselines.emg_left_pec : baselines[channelMode as EmgChannel]);
+    setBaselineRms(
+      isAllMode ? baselines.emg_left_pec : baselines[channelMode as EmgChannel],
+    );
     startCountdown();
   }
 
@@ -241,7 +251,9 @@ export default function MvcCalibrationView({
           if (rms > maxRms) maxRms = rms;
         }
         setCurrentRms(maxRms);
-        const maxPeak = Math.max(...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms));
+        const maxPeak = Math.max(
+          ...ALL_CHANNELS.map((ch) => rmsTrackersRef.current[ch].peakRms),
+        );
         setPeakRmsValue(maxPeak);
       }
     });
@@ -311,7 +323,7 @@ export default function MvcCalibrationView({
 
   const channelLabel = isAllMode
     ? "All channels"
-    : CHANNELS.find((c) => c.value === channelMode)?.label ?? channelMode;
+    : (CHANNELS.find((c) => c.value === channelMode)?.label ?? channelMode);
 
   // ── Render ──────────────────────────────────────────────────────
   if (!ble.connectedDevice) {
@@ -320,7 +332,12 @@ export default function MvcCalibrationView({
         <BackButton onPress={onBack} label="Back to Overview" />
         <Text
           variant="headlineSmall"
-          style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6, marginBottom: 16 }}
+          style={{
+            color: colors.onSurface,
+            fontWeight: "900",
+            marginTop: 6,
+            marginBottom: 16,
+          }}
         >
           MVC Calibration
         </Text>
@@ -334,11 +351,19 @@ export default function MvcCalibrationView({
       <BackButton onPress={onBack} label="Back to Overview" />
       <Text
         variant="headlineSmall"
-        style={{ color: colors.onSurface, fontWeight: "900", marginTop: 6, marginBottom: 4 }}
+        style={{
+          color: colors.onSurface,
+          fontWeight: "900",
+          marginTop: 6,
+          marginBottom: 4,
+        }}
       >
         MVC Calibration
       </Text>
-      <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 16 }}>
+      <Text
+        variant="bodyMedium"
+        style={{ color: colors.onSurfaceVariant, marginBottom: 16 }}
+      >
         {exerciseName}
       </Text>
 
@@ -347,7 +372,10 @@ export default function MvcCalibrationView({
         <>
           <Card style={styles.card} mode="outlined">
             <Card.Content>
-              <Text variant="titleSmall" style={{ color: colors.onSurface, marginBottom: 8 }}>
+              <Text
+                variant="titleSmall"
+                style={{ color: colors.onSurface, marginBottom: 8 }}
+              >
                 Select calibration mode
               </Text>
               <RadioButton.Group
@@ -356,7 +384,7 @@ export default function MvcCalibrationView({
               >
                 <RadioButton.Item
                   key="all"
-                  label="All channels (recommended – calibrate all 4 at once)"
+                  label="All channels"
                   value="all"
                   labelStyle={{ color: colors.onSurface }}
                 />
@@ -372,14 +400,22 @@ export default function MvcCalibrationView({
             </Card.Content>
           </Card>
 
-          <Card style={[styles.card, { borderColor: colors.infoBorder }]} mode="outlined">
-            <Card.Content style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}>
+          <Card
+            style={[styles.card, { borderColor: colors.infoBorder }]}
+            mode="outlined"
+          >
+            <Card.Content
+              style={{ backgroundColor: colors.infoBg, borderRadius: 12 }}
+            >
               <Text variant="bodySmall" style={{ color: colors.infoText }}>
                 The calibration has three steps:{"\n\n"}
-                1. Stay completely still for 2 seconds (baseline noise capture).{"\n"}
+                1. Stay completely still for 2 seconds (baseline noise capture).
+                {"\n"}
                 2. Get ready during a 3-second countdown.{"\n"}
-                3. Push as hard as you can for 5 seconds against a fixed bar.{"\n\n"}
-                Your MVC is the peak 1-second RMS window minus the baseline noise.
+                3. Push as hard as you can for 5 seconds against a fixed bar.
+                {"\n\n"}
+                Your MVC is the peak 1-second RMS window minus the baseline
+                noise.
               </Text>
             </Card.Content>
           </Card>
@@ -401,14 +437,31 @@ export default function MvcCalibrationView({
       {phase === "baseline" && (
         <Card style={styles.card} mode="outlined">
           <Card.Content style={{ paddingVertical: 24 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
               <Feather name="mic-off" size={20} color={colors.primary} />
-              <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+              <Text
+                variant="titleMedium"
+                style={{ color: colors.primary, fontWeight: "900" }}
+              >
                 STAY COMPLETELY STILL
               </Text>
             </View>
-            <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 12 }}>
-              Recording baseline noise{isAllMode ? " for all channels" : ` for ${channelLabel.toLowerCase()}`}...
+            <Text
+              variant="bodyMedium"
+              style={{ color: colors.onSurfaceVariant, marginBottom: 12 }}
+            >
+              Recording baseline noise
+              {isAllMode
+                ? " for all channels"
+                : ` for ${channelLabel.toLowerCase()}`}
+              ...
             </Text>
             <ProgressBar
               progress={progress}
@@ -423,12 +476,22 @@ export default function MvcCalibrationView({
       {phase === "countdown" && (
         <Card style={styles.card} mode="outlined">
           <Card.Content style={{ alignItems: "center", paddingVertical: 32 }}>
-            <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}>
+            <Text
+              variant="bodyMedium"
+              style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}
+            >
               {isAllMode
                 ? "Baseline captured for all channels"
                 : `Baseline captured (${baselineRms.toFixed(4)})`}
             </Text>
-            <Text variant="bodyLarge" style={{ color: colors.onSurfaceVariant, marginBottom: 8, fontWeight: "700" }}>
+            <Text
+              variant="bodyLarge"
+              style={{
+                color: colors.onSurfaceVariant,
+                marginBottom: 8,
+                fontWeight: "700",
+              }}
+            >
               Get ready to push...
             </Text>
             <Text
@@ -437,7 +500,10 @@ export default function MvcCalibrationView({
             >
               {countdown}
             </Text>
-            <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 8 }}>
+            <Text
+              variant="bodyMedium"
+              style={{ color: colors.onSurfaceVariant, marginTop: 8 }}
+            >
               {isAllMode
                 ? "Contract all target muscles as hard as you can"
                 : `Contract your ${channelLabel.toLowerCase()} as hard as you can`}
@@ -450,9 +516,19 @@ export default function MvcCalibrationView({
       {phase === "push" && (
         <Card style={styles.card} mode="outlined">
           <Card.Content style={{ paddingVertical: 24 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
               <Feather name="activity" size={20} color={colors.error} />
-              <Text variant="titleMedium" style={{ color: colors.error, fontWeight: "900" }}>
+              <Text
+                variant="titleMedium"
+                style={{ color: colors.error, fontWeight: "900" }}
+              >
                 PUSH AS HARD AS YOU CAN!
               </Text>
             </View>
@@ -463,23 +539,44 @@ export default function MvcCalibrationView({
               style={{ height: 8, borderRadius: 4, marginBottom: 16 }}
             />
 
-            <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}>
+            <Text
+              variant="labelMedium"
+              style={{ color: colors.onSurfaceVariant, marginBottom: 4 }}
+            >
               Mode: {channelLabel}
             </Text>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 8,
+              }}
+            >
               <View>
-                <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                <Text
+                  variant="labelSmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
                   Current RMS
                 </Text>
-                <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: "900" }}>
+                <Text
+                  variant="titleLarge"
+                  style={{ color: colors.onSurface, fontWeight: "900" }}
+                >
                   {currentRms.toFixed(4)}
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text variant="labelSmall" style={{ color: colors.onSurfaceVariant }}>
+                <Text
+                  variant="labelSmall"
+                  style={{ color: colors.onSurfaceVariant }}
+                >
                   Peak 1s RMS
                 </Text>
-                <Text variant="titleLarge" style={{ color: colors.primary, fontWeight: "900" }}>
+                <Text
+                  variant="titleLarge"
+                  style={{ color: colors.primary, fontWeight: "900" }}
+                >
                   {peakRmsValue.toFixed(4)}
                 </Text>
               </View>
@@ -496,55 +593,109 @@ export default function MvcCalibrationView({
               <Feather name="check-circle" size={40} color={colors.success} />
               <Text
                 variant="titleLarge"
-                style={{ color: colors.onSurface, fontWeight: "900", marginTop: 12 }}
+                style={{
+                  color: colors.onSurface,
+                  fontWeight: "900",
+                  marginTop: 12,
+                }}
               >
                 Calibration Complete
               </Text>
-              <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant, marginTop: 4 }}>
+              <Text
+                variant="bodyMedium"
+                style={{ color: colors.onSurfaceVariant, marginTop: 4 }}
+              >
                 {channelLabel}
               </Text>
 
               <View style={{ width: "100%", marginTop: 16, gap: 8 }}>
                 {isAllMode ? (
                   ALL_CHANNELS.map((ch) => {
-                    const label = CHANNELS.find((c) => c.value === ch)?.label ?? ch;
+                    const label =
+                      CHANNELS.find((c) => c.value === ch)?.label ?? ch;
                     const mvc = mvcResultAll[ch];
                     const baseline = baselineRmsAll[ch];
                     return (
                       <View key={ch} style={styles.doneRow}>
-                        <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                        <Text
+                          variant="labelMedium"
+                          style={{ color: colors.onSurfaceVariant }}
+                        >
                           {label}
                         </Text>
-                        <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
-                          MVC: {mvc.toFixed(4)} (baseline: {baseline.toFixed(4)})
+                        <Text
+                          variant="bodyMedium"
+                          style={{ color: colors.onSurface, fontWeight: "700" }}
+                        >
+                          MVC: {mvc.toFixed(4)} (baseline: {baseline.toFixed(4)}
+                          )
                         </Text>
                       </View>
                     );
                   })
                 ) : (
                   <>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Text
+                        variant="labelMedium"
+                        style={{ color: colors.onSurfaceVariant }}
+                      >
                         Baseline RMS (noise)
                       </Text>
-                      <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                      <Text
+                        variant="bodyMedium"
+                        style={{ color: colors.onSurface, fontWeight: "700" }}
+                      >
                         {baselineRms.toFixed(4)}
                       </Text>
                     </View>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text variant="labelMedium" style={{ color: colors.onSurfaceVariant }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Text
+                        variant="labelMedium"
+                        style={{ color: colors.onSurfaceVariant }}
+                      >
                         Peak 1s RMS (raw)
                       </Text>
-                      <Text variant="bodyMedium" style={{ color: colors.onSurface, fontWeight: "700" }}>
+                      <Text
+                        variant="bodyMedium"
+                        style={{ color: colors.onSurface, fontWeight: "700" }}
+                      >
                         {peakRmsValue.toFixed(4)}
                       </Text>
                     </View>
-                    <View style={{ height: 1, backgroundColor: colors.outline, marginVertical: 4 }} />
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                    <View
+                      style={{
+                        height: 1,
+                        backgroundColor: colors.outline,
+                        marginVertical: 4,
+                      }}
+                    />
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Text
+                        variant="titleMedium"
+                        style={{ color: colors.primary, fontWeight: "900" }}
+                      >
                         MVC (peak − baseline)
                       </Text>
-                      <Text variant="titleMedium" style={{ color: colors.primary, fontWeight: "900" }}>
+                      <Text
+                        variant="titleMedium"
+                        style={{ color: colors.primary, fontWeight: "900" }}
+                      >
                         {mvcResult.toFixed(4)}
                       </Text>
                     </View>
@@ -552,25 +703,30 @@ export default function MvcCalibrationView({
                 )}
 
                 {!isAllMode && mvcResult === 0 && (
-                  <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
-                    No usable signal detected. Make sure the device is sending data.
+                  <Text
+                    variant="bodySmall"
+                    style={{ color: colors.error, marginTop: 8 }}
+                  >
+                    No usable signal detected. Make sure the device is sending
+                    data.
                   </Text>
                 )}
-                {isAllMode && Object.values(mvcResultAll).every((v) => v === 0) && (
-                  <Text variant="bodySmall" style={{ color: colors.error, marginTop: 8 }}>
-                    No usable signal detected. Make sure the device is sending data.
-                  </Text>
-                )}
+                {isAllMode &&
+                  Object.values(mvcResultAll).every((v) => v === 0) && (
+                    <Text
+                      variant="bodySmall"
+                      style={{ color: colors.error, marginTop: 8 }}
+                    >
+                      No usable signal detected. Make sure the device is sending
+                      data.
+                    </Text>
+                  )}
               </View>
             </Card.Content>
           </Card>
 
           <View style={{ flexDirection: "row", gap: 12 }}>
-            <Button
-              mode="outlined"
-              onPress={resetAll}
-              style={{ flex: 1 }}
-            >
+            <Button mode="outlined" onPress={resetAll} style={{ flex: 1 }}>
               Recalibrate
             </Button>
             <Button
